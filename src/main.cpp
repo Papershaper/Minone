@@ -14,11 +14,11 @@ void loop()
   digitalWrite(LED_BUILTIN, HIGH);
  
   // Wait for a second
-  delay(1000);
+  delay(500);
  
   // Set the LED LOW
   digitalWrite(LED_BUILTIN, LOW);
  
    // Wait for a second
-  delay(1000);
+  delay(500);
 }
