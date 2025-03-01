@@ -4,7 +4,9 @@
 #include "secrets.h"   // Include sensitive credentials (gitignored)
 
 // Define the onboard LED pin (ESP32 uses GPIO 2 for many boards)
+#ifndef LED_BUILTIN
 #define LED_BUILTIN 2
+#endif
 
 // ===== HC-SR04 Sensor Pin Definitions =====
 #define TRIG_PIN 5      // GPIO5
