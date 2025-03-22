@@ -12,6 +12,7 @@
 #endif
 #define TRIG_PIN 5      
 #define ECHO_PIN 18
+#define SERVO_PIN 4 
 // Occupancy map
 #define MAP_WIDTH 120
 #define MAP_HEIGHT 120
@@ -37,12 +38,12 @@ const int CELL_SIZE_CM = 10;
 
 // Servo and sweep settings
 Servo sweepServo;
-const int SERVO_PIN = 4;           // Change to your servo control pin
 const int SERVO_CENTER = 90;       // Servo center position (forward)
 const int SWEEP_MIN = 45;          // Minimum servo angle (left sweep limit)
 const int SWEEP_MAX = 135;         // Maximum servo angle (right sweep limit)
 const int SWEEP_STEP = 5;          // Angle increment in degrees
-const int SERVO_DELAY_MS = 15;     // Delay for servo to settle
+const int SERVO_DELAY_MS = 30;     // Delay for servo to settle
+const int SENSOR_MAX_DIST = 200;   // maximum distance given tof
 
 // Function prototypes
 void setupWiFi();
@@ -187,6 +188,8 @@ void sweepAndUpdateMap() {
       updateCell(freeX, freeY, FREE);
     }
   }
+  // Delay after a complete sweep to allow time for the robot to move
+  delay(500);
 }
 
 // Publish the occupancy grid over MQTT
@@ -270,8 +273,17 @@ long readUltrasonicDistance(int triggerPin, int echoPin) {
   digitalWrite(triggerPin, HIGH);
   delayMicroseconds(10);
   digitalWrite(triggerPin, LOW);
-  long duration = pulseIn(echoPin, HIGH);
+  // Use a timeout of 30000 microseconds (30 ms)
+  long duration = pulseIn(echoPin, HIGH, 30000);
+  // If no echo is received, treat as out-of-range (200 cm)
+  if (duration == 0) {
+    return SENSOR_MAX_DIST;
+  }
+
   long distanceCm = (duration * 0.034) / 2;
+  if(distanceCm > SENSOR_MAX_DIST) {
+    distanceCm = SENSOR_MAX_DIST;
+  }
   return distanceCm;
 }
 
