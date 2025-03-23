@@ -4,6 +4,7 @@
 #include <PubSubClient.h>
 #include <ArduinoOTA.h>
 #include <ArduinoJson.h>
+#include "motors.h" 
 #include "secrets.h"   // Sensitive credentials (gitignored)
 
 // Define LED pin and sensor pins
@@ -65,11 +66,9 @@ void setup() {
   pinMode(TRIG_PIN, OUTPUT);
   pinMode(ECHO_PIN, INPUT);
   
-  // Connect to WiFi
-  setupWiFi();
-  
-  // Setup OTA update capability
-  setupOTA();
+
+  setupWiFi();  // Connect to WiFi
+  setupOTA(); // Setup OTA update capability
   
   // Configure MQTT
   mqttClient.setServer(MQTT_BROKER, MQTT_PORT);
@@ -81,6 +80,10 @@ void setup() {
   // Attach the servo
   sweepServo.attach(SERVO_PIN);
   sweepServo.write(SERVO_CENTER);  // Center the servo
+
+  // Initialize motors and encoders
+  setupMotors();
+  setupEncoders();
   
   // Log the starting position
   Serial.print("Robot starting position: (");
@@ -96,11 +99,12 @@ void loop() {
     reconnectMQTT();
   }
   mqttClient.loop();
-
-  // Handle OTA updates
-  ArduinoOTA.handle();
+  ArduinoOTA.handle();  // Handle OTA updates
 
   unsigned long currentMillis = millis();
+
+  // Update odometry periodically
+  updateOdometry();
 
   // Non-blocking LED heartbeat: blink briefly every 2 seconds
   if (currentMillis - lastHeartbeat >= 2000) {
