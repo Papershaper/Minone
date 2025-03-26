@@ -88,6 +88,7 @@ void setup() {
   // Configure MQTT
   mqttClient.setServer(MQTT_BROKER, MQTT_PORT);
   mqttClient.setCallback(mqttCallback);
+  mqttClient.setBufferSize(16000);   // Override the buffersize for the local_map
 
   // Allocate all available timers explicitly
   ESP32PWM::allocateTimer(0);
@@ -270,7 +271,7 @@ void publishTelemetry() {
   serializeJson(doc, payload);
   
   mqttClient.publish("minone/telemetry", payload.c_str());
-  Serial.print("Telemetry published: ");
+  Serial.print("Telemetry pub: ");
   Serial.println(payload);
 
   // Also publish the current map over MQTT
@@ -303,6 +304,10 @@ void updateCell(int gridX, int gridY, uint8_t value) {
 
 // Sweep function: Moves the servo, reads distance, and updates the map.
 void sweepAndUpdateMap() {
+  // move to start and settle.
+  sweepServo.write(SWEEP_MIN);
+  delay(200);
+
   // Sweep from SWEEP_MIN to SWEEP_MAX
   for (int angle = SWEEP_MIN; angle <= SWEEP_MAX; angle += SWEEP_STEP) {
     sweepServo.write(angle);
@@ -357,10 +362,11 @@ void sweepAndUpdateMap() {
 void publishMap() {
   // Mark the robot's current location on the grid
   updateCell(robotX, robotY, ROBOT);
-  
-  // Publish the raw binary map data
+
+  // Publish the raw binary map data  120x120 ~ 14.4 kb
   // topic:  "PolyMap/{self.robot_id}/slam"
   mqttClient.publish("minone/local_map", (const uint8_t*)occupancyGrid, sizeof(occupancyGrid));
+  
 }
 
 // ===== WiFi Setup =====
