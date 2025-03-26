@@ -13,7 +13,6 @@
 #endif
 #define TRIG_PIN 5      
 #define ECHO_PIN 18
-#define SERVO_PIN 4 
 // Occupancy map
 #define MAP_WIDTH 120
 #define MAP_HEIGHT 120
@@ -25,6 +24,13 @@
 // Global objects
 WiFiClient espClient;
 PubSubClient mqttClient(espClient);
+// Define robot agent states
+enum AgentState { STATE_IDLE, STATE_SWEEP, STATE_MOVE };
+// Global variable to hold the current agent state
+AgentState currentAgentState = STATE_IDLE;
+
+// DEBUG
+const bool DEBUG = false;
 
 // Telemetry and heartbeat timing variables
 unsigned long telemetryInterval = 2000;  // Default telemetry interval (ms)
@@ -39,6 +45,7 @@ const int CELL_SIZE_CM = 10;
 
 // Servo and sweep settings
 Servo sweepServo;
+const int SERVO_PIN = 4;           // initialized with strong type
 const int SERVO_CENTER = 90;       // Servo center position (forward)
 const int SWEEP_MIN = 45;          // Minimum servo angle (left sweep limit)
 const int SWEEP_MAX = 135;         // Maximum servo angle (right sweep limit)
@@ -55,8 +62,17 @@ void handleMQTTCommands(String command);
 void setupOTA();
 void initializeMap();
 void updateCell(int gridX, int gridY, uint8_t value);
-void sweepAndUpdateMap();
+void sweepAndUpdateMap();  //function prototype just for grins
 void publishMap();
+void maintainMQTT();
+void processOTA();
+void handleHeartbeat();
+void publishTelemetry();
+void updateTelemetry();
+void updateRobotAgent();  // Now includes the sensor sweep and movement logic
+
+
+//-------- SETUP ---------------------------//
 
 void setup() {
   Serial.begin(115200);
@@ -66,7 +82,6 @@ void setup() {
   pinMode(TRIG_PIN, OUTPUT);
   pinMode(ECHO_PIN, INPUT);
   
-
   setupWiFi();  // Connect to WiFi
   setupOTA(); // Setup OTA update capability
   
@@ -74,16 +89,23 @@ void setup() {
   mqttClient.setServer(MQTT_BROKER, MQTT_PORT);
   mqttClient.setCallback(mqttCallback);
 
+  // Allocate all available timers explicitly
+  ESP32PWM::allocateTimer(0);
+  ESP32PWM::allocateTimer(1);
+  ESP32PWM::allocateTimer(2);
+  ESP32PWM::allocateTimer(3);
+
+  // Initialize motors and encoders
+  setupMotors();
+  setupEncoders();
+
   // Initialize the occupancy grid
   initializeMap();
   
   // Attach the servo
   sweepServo.attach(SERVO_PIN);
+  delay(200);  //optional - probably not needed, with Pin order.
   sweepServo.write(SERVO_CENTER);  // Center the servo
-
-  // Initialize motors and encoders
-  setupMotors();
-  setupEncoders();
   
   // Log the starting position
   Serial.print("Robot starting position: (");
@@ -93,53 +115,173 @@ void setup() {
   Serial.println(")");
 }
 
+// ----- Main Loop ------------------ //
 void loop() {
-  // Ensure MQTT connection
+  maintainMQTT();       // Process MQTT messages and ensure connectivity
+  processOTA();         // Handle OTA updates
+  handleHeartbeat();    // Blink LED for system heartbeat
+  updateOdometry();     // keep the odometry up to date
+  updateTelemetry();    // Publish telemetry and map at intervals
+  updateRobotAgent();   // Call the robot decision-making stub
+}
+
+// ----- Task Function: Robot Agent with Sensor Sweep and Movement -----
+// The robot agent performs a sensor sweep, then drives forward 40 cm and repeats.
+// This function is non-blocking and uses a state machine.
+void updateRobotAgent() {
+  // Remove the local enum declaration since it's now global:
+  // static AgentState agentState = STATE_SWEEP;
+  // Instead, use the global variable: currentAgentState
+
+  // Variables for sensor sweep state
+  static unsigned long lastSweepTime = 0;
+  static int currentSweepAngle = SWEEP_MIN;  // Start at the left sweep limit
+
+  // Variables for move state
+  static float moveStartPosX = posX_cm;
+  static float moveStartPosY = posY_cm;
+  const float MOVE_DISTANCE_CM = 40.0;  // Target move distance
+
+  // Variable for idle state
+  static unsigned long idleStartTime = 0;
+
+  unsigned long now = millis();
+
+  switch (currentAgentState) {
+    case STATE_IDLE: {
+      // On first entry into IDLE, record the start time.
+      if (idleStartTime == 0) {
+        idleStartTime = now;
+        Serial.println("Entering IDLE state: pausing for 60 seconds.");
+      }
+      // Remain idle until 20 seconds have elapsed.
+      if (now - idleStartTime >= 20000) {  // 60,000 ms = 60 sec
+        idleStartTime = 0;  // Reset for next idle period
+        currentAgentState = STATE_SWEEP;
+        Serial.println("Idle complete. Switching to SWEEP state.");
+      }
+      break;
+    }
+
+    case STATE_SWEEP: {
+      // Perform the full, blocking sensor sweep.
+      Serial.println("Starting blocking sensor sweep...");
+      sweepAndUpdateMap();  // This function blocks while sweeping
+      // Center the servo after sweeping
+      sweepServo.write(SERVO_CENTER);
+      // Record the current odometry position as the starting point for movement
+      moveStartPosX = posX_cm;
+      moveStartPosY = posY_cm;
+      // Transition to MOVE state
+      // currentAgentState = STATE_MOVE;
+      currentAgentState = STATE_IDLE;
+      Serial.println("Sensor sweep complete, switching to next state.");
+      break;
+    }
+    
+    case STATE_MOVE: {
+      // Command robot to move forward at a fixed speed (adjust as needed)
+      setMotorSpeed(100, 100);
+
+      // Calculate distance moved using odometry (assuming updateOdometry() is called regularly)
+      float dx = posX_cm - moveStartPosX;
+      float dy = posY_cm - moveStartPosY;
+      float distanceMoved = sqrt(dx * dx + dy * dy);
+
+      //DEBUG
+      if (DEBUG){
+        Serial.print("MOVE - dx: ");
+        Serial.print(dx);
+        Serial.print(" dy: ");
+        Serial.print(dy);
+        Serial.print(" distance: ");
+        Serial.println(distanceMoved);
+      }
+
+      // If moved 40 cm or more, stop and return to sweeping
+      if (distanceMoved >= MOVE_DISTANCE_CM) {
+        setMotorSpeed(0, 0);  // Stop the motors
+        currentAgentState = STATE_SWEEP;  // Switch back to sensor sweep
+        lastSweepTime = now;      // Reset sweep timing
+      }
+      break;
+    }
+  }
+}
+
+// ----- Task Function: Maintain MQTT Connection ----- 
+void maintainMQTT() {
   if (!mqttClient.connected()) {
     reconnectMQTT();
   }
   mqttClient.loop();
-  ArduinoOTA.handle();  // Handle OTA updates
+}
 
-  unsigned long currentMillis = millis();
+// ----- Task Function: Handle OTA Updates -----
+void processOTA() {
+  ArduinoOTA.handle();
+}
 
-  // Update odometry periodically
-  updateOdometry();
-
-  // Non-blocking LED heartbeat: blink briefly every 2 seconds
-  if (currentMillis - lastHeartbeat >= 2000) {
+// ----- Task Function: Non-blocking LED Heartbeat -----
+// This version blinks the LED briefly every 2 seconds.
+void handleHeartbeat() {
+  static unsigned long lastBlink = 0;
+  unsigned long now = millis();
+  if (now - lastBlink >= 2000) {
     digitalWrite(LED_BUILTIN, HIGH);
-    lastHeartbeat = currentMillis;
-  } else if (currentMillis - lastHeartbeat >= 100) {
+    delay(50);  // Briefly turn on LED (can be adjusted)
     digitalWrite(LED_BUILTIN, LOW);
+    lastBlink = now;
+  }
+}
+
+// ----- Task Function: Sensor Sweep and Map Update ----- 
+void performSensorSweep() {
+  // Executes a full servo sweep and updates the occupancy grid
+  sweepAndUpdateMap();
+}
+
+// ----- Task Function: Publish Telemetry -----
+// This function publishes telemetry data and the local map.
+void publishTelemetry() {
+  // Example telemetry: you might update this later to include position, pose, and error statuses.
+  long distance = readUltrasonicDistance(TRIG_PIN, ECHO_PIN);
+  int rssi = WiFi.RSSI();
+  unsigned long uptime = millis() / 1000;  // Uptime in seconds
+
+  StaticJsonDocument<200> doc;
+  doc["distance_cm"] = distance;  // To be updated with position/pose later
+  doc["rssi"] = rssi;
+  doc["uptime_sec"] = uptime;
+  
+  switch (currentAgentState) {
+    case STATE_IDLE:
+      doc["agent_state"] = "idle";
+      break;
+    case STATE_SWEEP:
+      doc["agent_state"] = "sweep";
+      break;
+    case STATE_MOVE:
+      doc["agent_state"] = "move";
+      break;
   }
 
-  // Perform a sweep and update the map
-  sweepAndUpdateMap();
+  String payload;
+  serializeJson(doc, payload);
   
-  // Publish telemetry at defined intervals
+  mqttClient.publish("minone/telemetry", payload.c_str());
+  Serial.print("Telemetry published: ");
+  Serial.println(payload);
+
+  // Also publish the current map over MQTT
+  publishMap();
+}
+
+// ----- Task Function: Update Telemetry Periodically -----
+void updateTelemetry() {
+  unsigned long currentMillis = millis();
   if (currentMillis - lastTelemetry >= telemetryInterval) {
-    // kinda obsolete now with the sweep
-    long distance = readUltrasonicDistance(TRIG_PIN, ECHO_PIN);
-    int rssi = WiFi.RSSI();
-    unsigned long uptime = currentMillis / 1000;  // Uptime in seconds
-
-    // Create JSON formatted telemetry using ArduinoJson
-    StaticJsonDocument<200> doc;
-    doc["distance_cm"] = distance;
-    doc["rssi"] = rssi;
-    doc["uptime_sec"] = uptime;
-    
-    String payload;
-    serializeJson(doc, payload);
-    
-    mqttClient.publish("minone/telemetry", payload.c_str());
-    Serial.print("Telemetry published: ");
-    Serial.println(payload);
-
-    // Publish the current map over MQTT
-    publishMap();
-    
+    publishTelemetry();
     lastTelemetry = currentMillis;
   }
 }
@@ -176,6 +318,20 @@ void sweepAndUpdateMap() {
     // Convert the measured distance to number of cells
     int cellsAway = distance_cm / CELL_SIZE_CM;
     
+    //DEBUG
+    int read_angle = sweepServo.read(); // returns current pulse width as an angle between 0 and 180 degrees
+    int read_pulse = sweepServo.readMicroseconds(); 
+    Serial.print("sweep: angle:");
+    Serial.print(angle);
+    Serial.print(" read_angle: ");
+    Serial.print(read_angle);
+    Serial.print(" pulse: ");
+    Serial.print(read_pulse);
+    Serial.print(" dist: ");
+    Serial.print(distance_cm);
+    Serial.println();
+
+
     // Compute the grid coordinates of the detected obstacle
     // Assuming robot's forward (0° relative) corresponds to increasing X.
     int obstacleX = robotX + (int)(cellsAway * cos(angle_rad));
@@ -193,6 +349,7 @@ void sweepAndUpdateMap() {
     }
   }
   // Delay after a complete sweep to allow time for the robot to move
+  sweepServo.write(SERVO_CENTER);  // Center the servo
   delay(500);
 }
 
