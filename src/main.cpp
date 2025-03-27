@@ -254,6 +254,10 @@ void publishTelemetry() {
   doc["distance_cm"] = distance;  // To be updated with position/pose later
   doc["rssi"] = rssi;
   doc["uptime_sec"] = uptime;
+  // Add odometry information
+  doc["posX_cm"] = posX_cm;
+  doc["posY_cm"] = posY_cm;
+  doc["orientation_rad"] = orientation_rad;
   
   switch (currentAgentState) {
     case STATE_IDLE:
@@ -270,7 +274,7 @@ void publishTelemetry() {
   String payload;
   serializeJson(doc, payload);
   
-  mqttClient.publish("minone/telemetry", payload.c_str());
+  mqttClient.publish("PolyMap/minone/telemetry", payload.c_str());
   Serial.print("Telemetry pub: ");
   Serial.println(payload);
 
@@ -365,7 +369,7 @@ void publishMap() {
 
   // Publish the raw binary map data  120x120 ~ 14.4 kb
   // topic:  "PolyMap/{self.robot_id}/slam"
-  mqttClient.publish("minone/local_map", (const uint8_t*)occupancyGrid, sizeof(occupancyGrid));
+  mqttClient.publish("PolyMap/minone/local_map/blob", (const uint8_t*)occupancyGrid, sizeof(occupancyGrid));
   
 }
 
