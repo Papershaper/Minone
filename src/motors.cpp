@@ -9,8 +9,8 @@ float posY_cm = 0;
 float orientation_rad = 0.0;
 
 // --- Odometry Calculation Constants ---
-const float WHEEL_DIAMETER_CM = 7.0;      // Example: 5 cm diameter wheel
-const int   ENCODER_PULSES_PER_REV = 551;   // Example: 100 pulses per revolution
+const float WHEEL_DIAMETER_CM = 7.2;      // 72 mm. Example: 5 cm diameter wheel
+const int   ENCODER_PULSES_PER_REV = 509;   // actual 508.8
 const float WHEEL_BASE_CM = 25.0;           // Distance between the wheels in cm
 
 // --- PWM Setup Parameters ---

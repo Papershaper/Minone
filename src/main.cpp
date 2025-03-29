@@ -62,6 +62,7 @@ void handleMQTTCommands(String command);
 void setupOTA();
 void initializeMap();
 void updateCell(int gridX, int gridY, uint8_t value);
+void markLineFree(int x0, int y0, int x1, int y1);
 void sweepAndUpdateMap();  //function prototype just for grins
 void publishMap();
 void maintainMQTT();
@@ -90,12 +91,6 @@ void setup() {
   mqttClient.setCallback(mqttCallback);
   mqttClient.setBufferSize(16000);   // Override the buffersize for the local_map
 
-  // Allocate all available timers explicitly
-  ESP32PWM::allocateTimer(0);
-  ESP32PWM::allocateTimer(1);
-  ESP32PWM::allocateTimer(2);
-  ESP32PWM::allocateTimer(3);
-
   // Initialize motors and encoders
   setupMotors();
   setupEncoders();
@@ -104,7 +99,11 @@ void setup() {
   initializeMap();
   
   // Attach the servo
-  sweepServo.attach(SERVO_PIN);
+  // Allocate all available timers explicitly
+  ESP32PWM::allocateTimer(1);
+  int channel = sweepServo.attach(SERVO_PIN);
+  Serial.print("[timer 1 allocated] Servo Channel: ");
+  Serial.println(channel);
   delay(200);  //optional - probably not needed, with Pin order.
   sweepServo.write(SERVO_CENTER);  // Center the servo
   
@@ -141,7 +140,7 @@ void updateRobotAgent() {
   // Variables for move state
   static float moveStartPosX = posX_cm;
   static float moveStartPosY = posY_cm;
-  const float MOVE_DISTANCE_CM = 40.0;  // Target move distance
+  const float MOVE_DISTANCE_CM = 10.0;  // Target move distance
 
   // Variable for idle state
   static unsigned long idleStartTime = 0;
@@ -153,10 +152,10 @@ void updateRobotAgent() {
       // On first entry into IDLE, record the start time.
       if (idleStartTime == 0) {
         idleStartTime = now;
-        Serial.println("Entering IDLE state: pausing for 60 seconds.");
+        Serial.println("Entering IDLE state: pausing for 5 seconds.");
       }
       // Remain idle until 20 seconds have elapsed.
-      if (now - idleStartTime >= 20000) {  // 60,000 ms = 60 sec
+      if (now - idleStartTime >= 5000) {  // 60,000 ms = 60 sec
         idleStartTime = 0;  // Reset for next idle period
         currentAgentState = STATE_SWEEP;
         Serial.println("Idle complete. Switching to SWEEP state.");
@@ -174,15 +173,15 @@ void updateRobotAgent() {
       moveStartPosX = posX_cm;
       moveStartPosY = posY_cm;
       // Transition to MOVE state
-      // currentAgentState = STATE_MOVE;
-      currentAgentState = STATE_IDLE;
+      currentAgentState = STATE_MOVE;
+      // currentAgentState = STATE_IDLE;
       Serial.println("Sensor sweep complete, switching to next state.");
       break;
     }
     
     case STATE_MOVE: {
-      // Command robot to move forward at a fixed speed (adjust as needed)
-      setMotorSpeed(100, 100);
+      // Command robot to move forward 0-255, must be >200
+      setMotorSpeed(200, 200);
 
       // Calculate distance moved using odometry (assuming updateOdometry() is called regularly)
       float dx = posX_cm - moveStartPosX;
@@ -203,7 +202,7 @@ void updateRobotAgent() {
       if (distanceMoved >= MOVE_DISTANCE_CM) {
         setMotorSpeed(0, 0);  // Stop the motors
         currentAgentState = STATE_SWEEP;  // Switch back to sensor sweep
-        lastSweepTime = now;      // Reset sweep timing
+        lastSweepTime = now;      // Reset sweep timing -- DEPRECATED
       }
       break;
     }
@@ -306,6 +305,20 @@ void updateCell(int gridX, int gridY, uint8_t value) {
   }
 }
 
+void markLineFree(int x0, int y0, int x1, int y1) {
+  int dx = abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
+  int dy = -abs(y1 - y0), sy = y0 < y1 ? 1 : -1; 
+  int err = dx + dy, e2; // error value e_xy
+
+  while (true) {
+    updateCell(x0, y0, FREE);  // mark current cell as FREE
+    if (x0 == x1 && y0 == y1) break;
+    e2 = 2 * err;
+    if (e2 >= dy) { err += dy; x0 += sx; }
+    if (e2 <= dx) { err += dx; y0 += sy; }
+  }
+}
+
 // Sweep function: Moves the servo, reads distance, and updates the map.
 void sweepAndUpdateMap() {
   // move to start and settle.
@@ -320,46 +333,28 @@ void sweepAndUpdateMap() {
     // Get the sensor reading in centimeters
     long distance_cm = readUltrasonicDistance(TRIG_PIN, ECHO_PIN);
     
-    // Calculate the relative angle (with 0° being forward)
-    float relativeAngle = angle - SERVO_CENTER;
-    float angle_rad = relativeAngle * (PI / 180.0);
+    // Calculate the global map angle
+    float global_angle = orientation_rad + (angle - SERVO_CENTER) * (PI / 180.0);
     
     // Convert the measured distance to number of cells
     int cellsAway = distance_cm / CELL_SIZE_CM;
-    
-    //DEBUG
-    int read_angle = sweepServo.read(); // returns current pulse width as an angle between 0 and 180 degrees
-    int read_pulse = sweepServo.readMicroseconds(); 
-    Serial.print("sweep: angle:");
-    Serial.print(angle);
-    Serial.print(" read_angle: ");
-    Serial.print(read_angle);
-    Serial.print(" pulse: ");
-    Serial.print(read_pulse);
-    Serial.print(" dist: ");
-    Serial.print(distance_cm);
-    Serial.println();
-
 
     // Compute the grid coordinates of the detected obstacle
     // Assuming robot's forward (0° relative) corresponds to increasing X.
-    int obstacleX = robotX + (int)(cellsAway * cos(angle_rad));
-    int obstacleY = robotY + (int)(cellsAway * sin(angle_rad));
+    int obstacleX = robotX + (int)(cellsAway * cos(global_angle));
+    int obstacleY = robotY + (int)(cellsAway * sin(global_angle));
+    
+    // Mark all cells along the line from the robot to the obstacle as FREE
+    markLineFree(robotX, robotY, obstacleX, obstacleY);
     
     // Update the detected cell as OCCUPIED
     updateCell(obstacleX, obstacleY, OCCUPIED);
-    
-    // Optionally, mark cells along the beam as FREE.
-    // A simple way is to step from the robot's position to the obstacle.
-    for (int i = 1; i < cellsAway; i++) {
-      int freeX = robotX + (int)(i * cos(angle_rad));
-      int freeY = robotY + (int)(i * sin(angle_rad));
-      updateCell(freeX, freeY, FREE);
-    }
+
   }
-  // Delay after a complete sweep to allow time for the robot to move
+  // Delay after a complete sweep to allow time for the last reading
+  delay(200);
   sweepServo.write(SERVO_CENTER);  // Center the servo
-  delay(500);
+  delay(200);
 }
 
 // Publish the occupancy grid over MQTT
