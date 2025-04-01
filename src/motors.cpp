@@ -22,10 +22,16 @@ void setupMotors() {
   pinMode(LEFT_MOTOR_EN, OUTPUT);
   pinMode(LEFT_MOTOR_IN1, OUTPUT);
   pinMode(LEFT_MOTOR_IN2, OUTPUT);
+  digitalWrite(LEFT_MOTOR_EN, LOW);
+  digitalWrite(LEFT_MOTOR_IN1, LOW);
+  digitalWrite(LEFT_MOTOR_IN2, LOW);
 
   pinMode(RIGHT_MOTOR_EN, OUTPUT);
   pinMode(RIGHT_MOTOR_IN1, OUTPUT);
   pinMode(RIGHT_MOTOR_IN2, OUTPUT);
+  digitalWrite(RIGHT_MOTOR_EN, LOW);
+  digitalWrite(RIGHT_MOTOR_IN1, LOW);
+  digitalWrite(RIGHT_MOTOR_IN2, LOW);
 
   // Configure LEDC channels for PWM
   // Left Motor on channel 0

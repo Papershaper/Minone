@@ -4,11 +4,11 @@
 #include <Arduino.h>
 
 // --- Motor Pin Definitions ---
-#define LEFT_MOTOR_EN 12      // PWM enable pin for left motor
+#define LEFT_MOTOR_EN 19      // PWM enable pin for left motor (was 12)
 #define LEFT_MOTOR_IN1 13     // Direction control pin 1 for left motor
 #define LEFT_MOTOR_IN2 14     // Direction control pin 2 for left motor
 
-#define RIGHT_MOTOR_EN 15     // PWM enable pin for right motor
+#define RIGHT_MOTOR_EN 22     // PWM enable pin for right motor (was 15)
 #define RIGHT_MOTOR_IN1 16    // Direction control pin 1 for right motor
 #define RIGHT_MOTOR_IN2 17    // Direction control pin for right motor
 

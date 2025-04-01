@@ -294,7 +294,7 @@ void updateTelemetry() {
 void initializeMap() {
   for (int i = 0; i < MAP_HEIGHT; i++) {
     for (int j = 0; j < MAP_WIDTH; j++) {
-      occupancyGrid[i][j] = UNKNOWN;
+      occupancyGrid[i][j] = UNKNOWN;  //Initialize as UNKNOWN
     }
   }
 }
@@ -347,8 +347,13 @@ void sweepAndUpdateMap() {
     // Mark all cells along the line from the robot to the obstacle as FREE
     markLineFree(robotX, robotY, obstacleX, obstacleY);
     
-    // Update the detected cell as OCCUPIED
-    updateCell(obstacleX, obstacleY, OCCUPIED);
+    // Update the detected cell as OCCUPIED unless it is at max
+    if (distance_cm < SENSOR_MAX_DIST) {
+      updateCell(obstacleX, obstacleY, OCCUPIED);
+    } else {
+      updateCell(obstacleX, obstacleY, FREE);  // Either free or unkown
+    }
+    
 
   }
   // Delay after a complete sweep to allow time for the last reading

@@ -43,10 +43,10 @@ Despite the MVP status of Minone, it will need to peform the following functions
 | 2          | LED_BUILTIN       | On-board LED used for status indication (heartbeat).                |
 | 4          | SERVO_PIN         | Controls the servo for ultrasonic sensor sweeping.                  |
 | 5          | TRIG_PIN          | Ultrasonic sensor trigger signal.                                   |
-| 12         | LEFT_MOTOR_EN     | PWM enable for left motor (controlled via LEDC channel 0).          |
+| 19 (x12)   | LEFT_MOTOR_EN     | PWM enable for left motor (controlled via LEDC channel 0).          |
 | 13         | LEFT_MOTOR_IN1    | Left motor direction control pin 1.                                 |
 | 14         | LEFT_MOTOR_IN2    | Left motor direction control pin 2.                                 |
-| 15         | RIGHT_MOTOR_EN    | PWM enable for right motor (controlled via LEDC channel 1).         |
+| 22 (X15)   | RIGHT_MOTOR_EN    | PWM enable for right motor (controlled via LEDC channel 1).         |
 | 16         | RIGHT_MOTOR_IN1   | Right motor direction control pin 1.                                |
 | 17         | RIGHT_MOTOR_IN2   | Right motor direction control pin 2.                                |
 | 18         | ECHO_PIN          | Ultrasonic sensor echo input.                                       |
