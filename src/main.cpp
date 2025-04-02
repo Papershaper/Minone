@@ -4,6 +4,7 @@
 #include <PubSubClient.h>
 #include <ArduinoOTA.h>
 #include <ArduinoJson.h>
+#include "mqtt_manager.h"
 #include "motors.h" 
 #include "secrets.h"   // Sensitive credentials (gitignored)
 
@@ -24,6 +25,8 @@
 // Global objects
 WiFiClient espClient;
 PubSubClient mqttClient(espClient);
+MQTTManager mqttManager(mqttClient);
+
 // Define robot agent states
 enum AgentState { STATE_IDLE, STATE_SWEEP, STATE_MOVE };
 // Global variable to hold the current agent state
@@ -55,17 +58,14 @@ const int SENSOR_MAX_DIST = 200;   // maximum distance given tof
 
 // Function prototypes
 void setupWiFi();
-void reconnectMQTT();
-void mqttCallback(char* topic, byte* payload, unsigned int length);
 long readUltrasonicDistance(int triggerPin, int echoPin);
-void handleMQTTCommands(String command);
+void handleMQTTCommands(String command);  //future plans
 void setupOTA();
 void initializeMap();
 void updateCell(int gridX, int gridY, uint8_t value);
 void markLineFree(int x0, int y0, int x1, int y1);
 void sweepAndUpdateMap();  //function prototype just for grins
 void publishMap();
-void maintainMQTT();
 void processOTA();
 void handleHeartbeat();
 void publishTelemetry();
@@ -85,11 +85,7 @@ void setup() {
   
   setupWiFi();  // Connect to WiFi
   setupOTA(); // Setup OTA update capability
-  
-  // Configure MQTT
-  mqttClient.setServer(MQTT_BROKER, MQTT_PORT);
-  mqttClient.setCallback(mqttCallback);
-  mqttClient.setBufferSize(16000);   // Override the buffersize for the local_map
+  mqttManager.begin();  // Start the MQTT conneciton
 
   // Initialize motors and encoders
   setupMotors();
@@ -117,7 +113,7 @@ void setup() {
 
 // ----- Main Loop ------------------ //
 void loop() {
-  maintainMQTT();       // Process MQTT messages and ensure connectivity
+  mqttManager.maintain();       // Process MQTT messages and ensure connectivity
   processOTA();         // Handle OTA updates
   handleHeartbeat();    // Blink LED for system heartbeat
   updateOdometry();     // keep the odometry up to date
@@ -209,14 +205,6 @@ void updateRobotAgent() {
   }
 }
 
-// ----- Task Function: Maintain MQTT Connection ----- 
-void maintainMQTT() {
-  if (!mqttClient.connected()) {
-    reconnectMQTT();
-  }
-  mqttClient.loop();
-}
-
 // ----- Task Function: Handle OTA Updates -----
 void processOTA() {
   ArduinoOTA.handle();
@@ -273,7 +261,7 @@ void publishTelemetry() {
   String payload;
   serializeJson(doc, payload);
   
-  mqttClient.publish("PolyMap/minone/telemetry", payload.c_str());
+  mqttManager.publishTelemetry(payload.c_str());
   Serial.print("Telemetry pub: ");
   Serial.println(payload);
 
@@ -369,7 +357,7 @@ void publishMap() {
 
   // Publish the raw binary map data  120x120 ~ 14.4 kb
   // topic:  "PolyMap/{self.robot_id}/slam"
-  mqttClient.publish("PolyMap/minone/local_map/blob", (const uint8_t*)occupancyGrid, sizeof(occupancyGrid));
+  mqttManager.publishMap((const uint8_t*)occupancyGrid, sizeof(occupancyGrid));
   
 }
 
@@ -392,40 +380,8 @@ void setupWiFi() {
   Serial.println(WiFi.localIP());
 }
 
-// ===== MQTT Reconnection =====
-void reconnectMQTT() {
-  while (!mqttClient.connected()) {
-    Serial.print("Attempting MQTT connection...");
-    String clientId = "ESP32Client-";
-    clientId += String(random(0xffff), HEX);
-    if (mqttClient.connect(clientId.c_str(), MQTT_USERNAME, MQTT_PASSWORD)) {
-      Serial.println("connected");
-      mqttClient.subscribe("minone/commands");
-    } else {
-      Serial.print("failed, rc=");
-      Serial.print(mqttClient.state());
-      Serial.println(" - trying again in 5 seconds");
-      delay(5000);
-    }
-  }
-}
 
-// ===== MQTT Callback =====
-void mqttCallback(char* topic, byte* payload, unsigned int length) {
-  Serial.print("Message arrived on topic [");
-  Serial.print(topic);
-  Serial.print("]: ");
-  String message;
-  for (unsigned int i = 0; i < length; i++) {
-    message += (char)payload[i];
-  }
-  Serial.println(message);
-
-  // Handle command messages on "minone/commands"
-  handleMQTTCommands(message);
-}
-
-// ===== Command Handler =====
+// ===== Command Handler =====  //  DEPRECATED?? or hold for future commands
 void handleMQTTCommands(String command) {
   // Example: "SET_INTERVAL:3000" adjusts telemetry interval to 3000 ms
   if (command.startsWith("SET_INTERVAL:")) {
