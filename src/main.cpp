@@ -4,6 +4,7 @@
 #include <PubSubClient.h>
 #include <ArduinoOTA.h>
 #include <ArduinoJson.h>
+#include "globals.h"
 #include "mqtt_manager.h"
 #include "motors.h" 
 #include "secrets.h"   // Sensitive credentials (gitignored)
@@ -35,14 +36,6 @@ RobotState currentRobotState = AUTONOMOUS;
 // --- Global Agent State for Automated Mode ---
 enum AgentState { STATE_IDLE, STATE_SWEEP, STATE_MOVE };
 AgentState autoAgentState = STATE_IDLE;
-
-// Global flags or variables updated by MQTT callbacks:
-bool startManualFlag = false;
-bool startAutoFlag = false;
-bool pauseFlag = false;
-bool resumeFlag = false;
-bool errorFlag = false;
-// ... plus any manual motion commands
 
 // DEBUG
 const bool DEBUG = false;
@@ -157,7 +150,41 @@ void loop() {
 
 void updateManualCommands() {
   // check command que and execute
+  if (!manualTaskQueue.empty()) {
+    ManualTaskItem cmd = manualTaskQueue.front();
+    manualTaskQueue.pop();
+    
+    StaticJsonDocument<256> doc;
+    DeserializationError err = deserializeJson(doc, cmd.rawMessage);
+    if (!err) {
+      // Read 'action' field
+      const char* action = doc["action"] | "";
+      if (strcmp(action, "move") == 0) {
+        float distance = doc["distance_cm"] | 0.0;
+        int speed      = doc["speed"] | 200;
+        // Now do something with it, e.g.
+        // enqueueManualCommand("move", distance, speed);
+        Serial.print("Got 'move' command, distance: ");
+        Serial.print(distance);
+        Serial.print(" speed: ");
+        Serial.println(speed);
+      }
+      else if (strcmp(action, "turn") == 0) {
+        float angle = doc["angle_deg"] | 0.0;
+        // ...
+        Serial.print("Got 'turn' command, angle: ");
+        Serial.println(angle);
+      }
+      else {
+        Serial.println("Unknown action in JSON");
+      }
+    }
+    else {
+      Serial.println("JSON parse error or raw command - handle as needed");
+    }
+  }
 }
+
 
 // ----- Task Function: Robot Agent with Sensor Sweep and Movement -----
 // The robot agent performs a sensor sweep, then drives forward 40 cm and repeats.
@@ -247,18 +274,22 @@ void processIncomingCommands() {
   // check flags and take action as needed; change state levels
   if (startManualFlag) {
     startManualFlag = false;
+    currentRobotState = MANUAL;
   }
 
   if (startAutoFlag) {
     startAutoFlag = false;
+    currentRobotState = AUTONOMOUS;
   }
 
   if (pauseFlag) {
     pauseFlag = false;
+    currentRobotState = PAUSED;
   }
 
   if (resumeFlag) {
     resumeFlag = false;
+    currentRobotState = AUTONOMOUS;
   }
 
   if (errorFlag) {

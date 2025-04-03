@@ -1,4 +1,5 @@
 #include "mqtt_manager.h"
+#include "globals.h"
 #include "secrets.h"   // For MQTT credentials
 #include <Arduino.h>
 
@@ -34,7 +35,7 @@ void MQTTManager::reconnect() {
         clientId += String(random(0xffff), HEX);
         if (mqttClient.connect(clientId.c_str(), MQTT_USERNAME, MQTT_PASSWORD)) {
             Serial.println("connected");
-            mqttClient.subscribe("minone/commands");
+            mqttClient.subscribe("PolyMap/minone/cmd/#");  //SUBSCRIBE to all commands
         } else {
             Serial.print("failed, rc=");
             Serial.print(mqttClient.state());
@@ -53,5 +54,35 @@ void MQTTManager::mqttCallback(char* topic, byte* payload, unsigned int length) 
         message += (char)payload[i];
     }
     Serial.println(message);
-    // Here, you can call a function to handle the command (e.g., handleMQTTCommands)
+    
+    if (strstr(topic, "/cmd/state") != nullptr) {
+        // Minimal parse
+        if (message == "start_manual") {
+            startManualFlag = true;
+        }
+        else if (message == "start_auto") {
+            startAutoFlag = true;
+        }
+        else if (message == "pause") {
+            pauseFlag = true;
+        }
+        else if (message == "resume") {
+            resumeFlag = true;
+        }
+      }
+      else if (strstr(topic, "/cmd/manual") != nullptr) {
+        // Create a new ManualTaskItem
+        ManualTaskItem task;
+        // Optionally, parse out a command type from the message 
+        // but you decided to store 'commandType' or 'rawMessage' for later:
+        // For example, if you want a quick guess:
+        task.commandType = "unknown"; 
+        // Or parse a small substring, etc.
+        
+        task.rawMessage = message;
+        task.timestamp  = millis();
+
+        // Push the command into the global queue
+        manualTaskQueue.push(task);
+      }
 }
