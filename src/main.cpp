@@ -28,9 +28,21 @@ PubSubClient mqttClient(espClient);
 MQTTManager mqttManager(mqttClient);
 
 // Define robot agent states
-enum AgentState { STATE_IDLE, STATE_SWEEP, STATE_MOVE };
+enum RobotState { STANDBY, MANUAL, AUTONOMOUS, PAUSED, ERROR };
 // Global variable to hold the current agent state
-AgentState currentAgentState = STATE_IDLE;
+RobotState currentRobotState = AUTONOMOUS;
+
+// --- Global Agent State for Automated Mode ---
+enum AgentState { STATE_IDLE, STATE_SWEEP, STATE_MOVE };
+AgentState autoAgentState = STATE_IDLE;
+
+// Global flags or variables updated by MQTT callbacks:
+bool startManualFlag = false;
+bool startAutoFlag = false;
+bool pauseFlag = false;
+bool resumeFlag = false;
+bool errorFlag = false;
+// ... plus any manual motion commands
 
 // DEBUG
 const bool DEBUG = false;
@@ -53,7 +65,7 @@ const int SERVO_CENTER = 90;       // Servo center position (forward)
 const int SWEEP_MIN = 45;          // Minimum servo angle (left sweep limit)
 const int SWEEP_MAX = 135;         // Maximum servo angle (right sweep limit)
 const int SWEEP_STEP = 5;          // Angle increment in degrees
-const int SERVO_DELAY_MS = 30;     // Delay for servo to settle
+const int SERVO_DELAY_MS = 40;     // Delay for servo to settle, 38ms timeout for sensor
 const int SENSOR_MAX_DIST = 200;   // maximum distance given tof
 
 // Function prototypes
@@ -71,6 +83,9 @@ void handleHeartbeat();
 void publishTelemetry();
 void updateTelemetry();
 void updateRobotAgent();  // Now includes the sensor sweep and movement logic
+void processIncomingCommands();
+void updateManualCommands();
+void handleErrorState();
 
 
 //-------- SETUP ---------------------------//
@@ -119,6 +134,29 @@ void loop() {
   updateOdometry();     // keep the odometry up to date
   updateTelemetry();    // Publish telemetry and map at intervals
   updateRobotAgent();   // Call the robot decision-making stub
+
+  processIncomingCommands();  //new MQTT commands or other inputs
+
+  //updateRobotState();  //Review current high level state; room for new modes -Docking, charging
+  switch(currentRobotState) {
+    case MANUAL:
+      updateManualCommands();
+      break;
+    case AUTONOMOUS:
+      updateRobotAgent();
+      break;
+    case STANDBY:
+      break;
+    case PAUSED:
+      break;
+    case ERROR:
+      handleErrorState();
+      break;
+  }
+}
+
+void updateManualCommands() {
+  // check command que and execute
 }
 
 // ----- Task Function: Robot Agent with Sensor Sweep and Movement -----
@@ -143,7 +181,7 @@ void updateRobotAgent() {
 
   unsigned long now = millis();
 
-  switch (currentAgentState) {
+  switch (autoAgentState) {
     case STATE_IDLE: {
       // On first entry into IDLE, record the start time.
       if (idleStartTime == 0) {
@@ -153,7 +191,7 @@ void updateRobotAgent() {
       // Remain idle until 20 seconds have elapsed.
       if (now - idleStartTime >= 5000) {  // 60,000 ms = 60 sec
         idleStartTime = 0;  // Reset for next idle period
-        currentAgentState = STATE_SWEEP;
+        autoAgentState = STATE_SWEEP;
         Serial.println("Idle complete. Switching to SWEEP state.");
       }
       break;
@@ -169,7 +207,7 @@ void updateRobotAgent() {
       moveStartPosX = posX_cm;
       moveStartPosY = posY_cm;
       // Transition to MOVE state
-      currentAgentState = STATE_MOVE;
+      autoAgentState = STATE_MOVE;
       // currentAgentState = STATE_IDLE;
       Serial.println("Sensor sweep complete, switching to next state.");
       break;
@@ -197,12 +235,42 @@ void updateRobotAgent() {
       // If moved 40 cm or more, stop and return to sweeping
       if (distanceMoved >= MOVE_DISTANCE_CM) {
         setMotorSpeed(0, 0);  // Stop the motors
-        currentAgentState = STATE_SWEEP;  // Switch back to sensor sweep
+        autoAgentState = STATE_SWEEP;  // Switch back to sensor sweep
         lastSweepTime = now;      // Reset sweep timing -- DEPRECATED
       }
       break;
     }
   }
+}
+
+void processIncomingCommands() {
+  // check flags and take action as needed; change state levels
+  if (startManualFlag) {
+    startManualFlag = false;
+  }
+
+  if (startAutoFlag) {
+    startAutoFlag = false;
+  }
+
+  if (pauseFlag) {
+    pauseFlag = false;
+  }
+
+  if (resumeFlag) {
+    resumeFlag = false;
+  }
+
+  if (errorFlag) {
+    errorFlag = false;
+  }
+
+}
+
+void handleErrorState() {
+  // Stop motors, lock out commands or do a safe shutdown
+  setMotorSpeed(0, 0);
+  // Possibly blink an LED or broadcast a special MQTT message
 }
 
 // ----- Task Function: Handle OTA Updates -----
@@ -246,7 +314,25 @@ void publishTelemetry() {
   doc["posY_cm"] = posY_cm;
   doc["orientation_rad"] = orientation_rad;
   
-  switch (currentAgentState) {
+  switch (currentRobotState) {  //STANDBY, MANUAL, AUTONOMOUS, PAUSED, ERROR 
+    case STANDBY:
+      doc["robot_state"] = "STANDBY";
+      break;
+    case MANUAL:
+      doc["robot_state"] = "MANUAL";
+      break;
+    case AUTONOMOUS:
+      doc["robot_state"] = "AUTONOMOUS";
+      break;
+    case PAUSED:
+      doc["robot_state"] = "PAUSED";
+      break;
+    case ERROR:
+      doc["robot_state"] = "ERROR";
+      break;
+  }
+
+  switch (autoAgentState) {
     case STATE_IDLE:
       doc["agent_state"] = "idle";
       break;
