@@ -1,3 +1,4 @@
+#include <cmath>
 #include "motors.h"
 
 // --- Global Variable Definitions ---
@@ -16,6 +17,7 @@ MoveCommand currentMove;
 const float WHEEL_DIAMETER_CM = 7.2;      // 72 mm. Example: 5 cm diameter wheel
 const int   ENCODER_PULSES_PER_REV = 509;   // actual 508.8
 const float WHEEL_BASE_CM = 25.0;           // Distance between the wheels in cm
+const float ANGLE_TOLERANCE = 0.01;    //for tracking turns
 
 // --- PWM Setup Parameters ---
 const int PWM_FREQUENCY = 5000; // 5kHz PWM frequency
@@ -134,60 +136,113 @@ void startMove(float distance, int speed, unsigned long timeout_ms) {
   currentMove.startTime = millis();
   currentMove.startX = posX_cm;
   currentMove.startY = posY_cm;
-  moveState = MOVE_INIT;
+  currentMove.moveState = MOVE_INIT;
 }
 
-void updateMove() {
-  if (moveState == MOVE_IDLE) return;
-  
-  unsigned long now = millis();
+bool updateMoveTask(MoveCommand &cmd) {
+  switch (cmd.moveState) {
 
-  switch(moveState) {
+    case MOVE_IDLE:
+    // Transition to INIT
+    cmd.moveState = MOVE_INIT;
+    return false;
+
     case MOVE_INIT:
-      // Start the motors
-      setMotorSpeed(currentMove.speed, currentMove.speed);
-      moveState = MOVE_IN_PROGRESS;
-      Serial.println("Move started.");
-      break;
-      
+    // 1) Capture start X, Y 
+    cmd.startX = posX_cm;  
+    cmd.startY = posY_cm;
+    cmd.startTime = millis();
+    // 2) Initialize motors
+    setMotorSpeed(cmd.speed, cmd.speed); 
+    // 3) Transition to IN_PROGRESS
+    cmd.moveState = MOVE_IN_PROGRESS;
+    return false;
+
     case MOVE_IN_PROGRESS: {
-      // Check for timeout
-      if (now - currentMove.startTime >= currentMove.timeout) {
-        moveState = MOVE_ABORT;
-        Serial.println("Move timed out.");
-        break;
-      }
-      
-      // Calculate distance moved using odometry
-      float dx = posX_cm - currentMove.startX;
-      float dy = posY_cm - currentMove.startY;
-      float distanceMoved = sqrt(dx * dx + dy * dy);
-      
-      // Check if target reached
-      if (distanceMoved >= currentMove.targetDistance) {
-        moveState = MOVE_COMPLETE;
-        Serial.println("Move complete.");
-      }
-      
-      // Optionally add checks here for obstacles or being stuck
-      // e.g., if (isStuck()) { moveState = MOVE_ABORT; }
-      
-      break;
+    // Check how far we've traveled
+    float dx = posX_cm - cmd.startX;
+    float dy = posY_cm - cmd.startY;
+    float dist = sqrt(dx*dx + dy*dy);
+    
+    // Check if distance is reached
+    if (dist >= cmd.targetDistance) {
+        // Stop motors
+        setMotorSpeed(0,0);
+        cmd.moveState = MOVE_COMPLETE;
+        return false;
     }
-      
+    // Check for timeout
+    if (millis() - cmd.startTime > cmd.timeout) {
+        // Possibly abort
+        cmd.moveState = MOVE_ABORT;
+        return false;
+    }
+    return false; // still in progress
+    }
+
     case MOVE_COMPLETE:
-      setMotorSpeed(0, 0); // Stop motors
-      moveState = MOVE_IDLE;
-      break;
-      
+    // Possibly do some finalization
+    // Then we declare 'true' => task is done
+    return true;
+
     case MOVE_ABORT:
-      setMotorSpeed(0, 0); // Stop motors
-      moveState = MOVE_IDLE;
-      // Handle error state or notify the user/system
-      Serial.println("Move aborted.");
-      break;
-      
-    default:
-      break;
+    // Stop motors, log error, etc.
+    setMotorSpeed(0, 0);
+    return true;  // done, but aborted
   }
+  return true; // default to done if something unexpected
+}
+
+bool updateTurnTask(TurnCommand &cmd) {
+  switch (cmd.turnState) {
+
+    case TURN_IDLE:
+    // Transition to INIT
+    cmd.turnState = TURN_INIT;
+    return false;
+
+    case TURN_INIT:
+    cmd.targetAngle_rad = cmd.targetAngle * (M_PI / 180.0);
+    // 1) Capture start X, Y 
+    cmd.startAngle_rad = orientation_rad;
+    cmd.startTime = millis();
+    // 2) Initialize motors in correct direction
+    if (cmd.targetAngle_rad > 0) {
+      setMotorSpeed(cmd.speed, -cmd.speed);
+    } else {
+      setMotorSpeed(-cmd.speed, cmd.speed);
+    }
+     
+    // 3) Transition to IN_PROGRESS
+    cmd.turnState = TURN_IN_PROGRESS;
+    return false;
+
+    case TURN_IN_PROGRESS: {
+    // Check if angle is reached
+    if (fabs(orientation_rad - cmd.targetAngle_rad) < ANGLE_TOLERANCE) {
+        // Stop motors
+        setMotorSpeed(0,0);
+        cmd.turnState = TURN_COMPLETE;
+        return false;
+    }
+    // Check for timeout
+    if (millis() - cmd.startTime > cmd.timeout) {
+        // Possibly abort
+        cmd.turnState = TURN_ABORT;
+        return false;
+    }
+    return false; // still in progress
+    }
+
+    case TURN_COMPLETE:
+    // Possibly do some finalization
+    // Then we declare 'true' => task is done
+    return true;
+
+    case TURN_ABORT:
+    // Stop motors, log error, etc.
+    setMotorSpeed(0, 0);
+    return true;  // done, but aborted
+  }
+  return true; // default to done if something unexpected
 }

@@ -4,6 +4,7 @@
 #include <PubSubClient.h>
 #include <ArduinoOTA.h>
 #include <ArduinoJson.h>
+#include <queue>
 #include "globals.h"
 #include "mqtt_manager.h"
 #include "motors.h" 
@@ -33,7 +34,24 @@ enum RobotState { STANDBY, MANUAL, AUTONOMOUS, PAUSED, ERROR };
 // Global variable to hold the current agent state
 RobotState currentRobotState = STANDBY;
 
-// --- Global Agent State for Automated Mode ---
+// Task Type definition for non-blocking task execution
+enum TaskType {TASK_NONE, TASK_MOVE, TASK_TURN, TASK_SCAN };  //room for more
+
+// Task Wrapper, for queue and execution
+struct RobotTask {
+  TaskType type;
+  MoveCommand moveCmd;  // for TASK_MOVE
+  TurnCommand turnCmd;  // for TASK_TURN
+  //ScanCommand scanCmd;  // for TASK_SCAN
+  // Additional commands can go here
+  // only 'activate' the relevant command in the TaskType
+};
+
+//set up the queue
+std::queue<RobotTask> taskQueue;
+RobotTask* activeTask = nullptr;
+
+// --- Global Agent State for Automated Mode ---  DEPRECATED, Reuse for Frontier Search
 enum AgentState { STATE_IDLE, STATE_SWEEP, STATE_MOVE };
 AgentState autoAgentState = STATE_IDLE;
 
@@ -79,6 +97,10 @@ void updateRobotAgent();  // Now includes the sensor sweep and movement logic
 void processIncomingCommands();
 void updateManualCommands();
 void handleErrorState();
+void updateTaskRunner();
+bool updateRobotTask(RobotTask &task); //activate the RobotTask wrapper pattern
+void enqueueMoveTask(float distanceCm, int speed, unsigned long timeoutMs);
+void enqueueTurnTask(float angleDeg, int speed, unsigned long timeoutMs);
 
 
 //-------- SETUP ---------------------------//
@@ -127,17 +149,15 @@ void loop() {
   updateOdometry();     // keep the odometry up to date
   updateTelemetry();    // Publish telemetry and map at intervals
   processIncomingCommands();  //new MQTT commands or other inputs
+  updateManualCommands();  //process any new commands
 
-  // non-blocking robot controls
-  updateMove();
-
-  //updateRobotState();  //Review current high level state; room for new modes -Docking, charging
   switch(currentRobotState) {
     case MANUAL:
-      updateManualCommands();
+      updateTaskRunner();
       break;
     case AUTONOMOUS:
       updateRobotAgent();
+      updateTaskRunner();
       break;
     case STANDBY:
       //wait for action
@@ -147,6 +167,42 @@ void loop() {
     case ERROR:
       handleErrorState();
       break;
+  }
+}
+
+void updateTaskRunner() {
+  if (!activeTask) {
+    if (!taskQueue.empty()) {
+      // We only set the pointer to the front item
+      // so we can update it in place
+      // (Alternatively, you can pop and store it, but then you must
+      // push it back if it's not done. Another approach is to copy it locally.)
+      activeTask = &taskQueue.front();
+    } else {
+      return; // no tasks
+    }
+  }
+
+  bool done = updateRobotTask(*activeTask);
+  if (done) {
+    // Completed or aborted => remove from queue
+    taskQueue.pop();
+    activeTask = nullptr;
+  }
+}
+
+bool updateRobotTask(RobotTask &task) {
+  switch (task.type) {
+    case TASK_MOVE:
+      return updateMoveTask(task.moveCmd);
+    case TASK_TURN:
+      return updateTurnTask(task.turnCmd);
+    case TASK_SCAN:
+      //return updateScanTask(task.scanCmd);
+      return true;
+    default:
+      // no-op or immediately done
+      return true;
   }
 }
 
@@ -164,19 +220,19 @@ void updateManualCommands() {
       if (strcmp(action, "move") == 0) {
         float distance = doc["distance_cm"] | 0.0;
         int speed      = doc["speed"] | 200;
-        // Now do something with it, e.g.
-        // enqueueManualCommand("move", distance, speed);
-        Serial.print("Got 'move' command, distance: ");
-        Serial.print(distance);
-        Serial.print(" speed: ");
-        Serial.println(speed);
+        unsigned long timeout = doc["timeout"] | 10000; // default 10s
+
+        // Instead of directly moving, we create a task:
+        enqueueMoveTask(distance, speed, timeout);
       }
       else if (strcmp(action, "turn") == 0) {
-        float angle = doc["angle_deg"] | 0.0;
-        // ...
-        Serial.print("Got 'turn' command, angle: ");
-        Serial.println(angle);
+        float angle   = doc["angle_deg"] | 0.0;
+        int speed     = doc["speed"]     | 200;
+        unsigned long timeout = doc["timeout"] | 10000;
+
+        enqueueTurnTask(angle, speed, timeout);
       }
+      // add in SCAN
       else {
         Serial.println("Unknown action in JSON");
       }
@@ -188,26 +244,9 @@ void updateManualCommands() {
 }
 
 
-// ----- Task Function: Robot Agent with Sensor Sweep and Movement -----
-// The robot agent performs a sensor sweep, then drives forward 40 cm and repeats.
-// This function is non-blocking and uses a state machine.
+// ----- Task Function for Autonomous Robot Agent -----
 void updateRobotAgent() {
-  // Remove the local enum declaration since it's now global:
-  // static AgentState agentState = STATE_SWEEP;
-  // Instead, use the global variable: currentAgentState
-
-  // Variables for sensor sweep state
-  static unsigned long lastSweepTime = 0;
-  static int currentSweepAngle = SWEEP_MIN;  // Start at the left sweep limit
-
-  // Variables for move state
-  static float moveStartPosX = posX_cm;
-  static float moveStartPosY = posY_cm;
-  const float MOVE_DISTANCE_CM = 10.0;  // Target move distance
-
-  // Variable for idle state
   static unsigned long idleStartTime = 0;
-
   unsigned long now = millis();
 
   switch (autoAgentState) {
@@ -217,7 +256,6 @@ void updateRobotAgent() {
         idleStartTime = now;
         Serial.println("Entering IDLE state: pausing for 5 seconds.");
       }
-      // Remain idle until 20 seconds have elapsed.
       if (now - idleStartTime >= 5000) {  // 60,000 ms = 60 sec
         idleStartTime = 0;  // Reset for next idle period
         autoAgentState = STATE_SWEEP;
@@ -228,24 +266,17 @@ void updateRobotAgent() {
 
     case STATE_SWEEP: {
       // Perform the full, blocking sensor sweep.
-      Serial.println("Starting blocking sensor sweep...");
+      Serial.println("Blocking sensor sweep...");
       sweepAndUpdateMap();  // This function blocks while sweeping
-      // Center the servo after sweeping
       sweepServo.write(SERVO_CENTER);
-      // Record the current odometry position as the starting point for movement
-      moveStartPosX = posX_cm;
-      moveStartPosY = posY_cm;
-      // Transition to MOVE state
       autoAgentState = STATE_MOVE;
       // currentAgentState = STATE_IDLE;
-      Serial.println("Sensor sweep complete, switching to next state.");
       break;
     }
     
     case STATE_MOVE: {
-      // Command the robot to START a MOVE -- this is temporary
-      // Command robot to move forward 0-255, must be >200
-      startMove(MOVE_DISTANCE_CM, 200, 10000);  //move 10cm, at 200, timeout 10s
+      Serial.println("Enqueueing a move task from agent...");
+      enqueueMoveTask(10.0f, 200, 10000);  // e.g., 10 cm, speed=200, 10s timeout
 
       autoAgentState = STATE_IDLE;  // nonblcking swith to itdle form now.
       break;
@@ -535,4 +566,32 @@ void setupOTA() {
     else if (error == OTA_END_ERROR) Serial.println("End Failed");
   });
   ArduinoOTA.begin();
+}
+
+// ---------------
+//  Helper FUNCTIONS
+// ---------------
+void enqueueMoveTask(float distanceCm, int speed, unsigned long timeoutMs) {
+  RobotTask task;
+  task.type = TASK_MOVE;
+  // Initialize the MoveCommand sub-struct
+  task.moveCmd.moveState      = MOVE_IDLE;   // Start from IDLE
+  task.moveCmd.targetDistance = distanceCm;
+  task.moveCmd.speed          = speed;
+  task.moveCmd.timeout        = timeoutMs;
+  // Other fields like startX, startY, startTime will be set in the update function
+
+  taskQueue.push(task);
+}
+
+void enqueueTurnTask(float angleDeg, int speed, unsigned long timeoutMs) {
+  RobotTask task;
+  task.type = TASK_TURN;
+  task.turnCmd.turnState    = TURN_IDLE;
+  task.turnCmd.targetAngle  = angleDeg;
+  task.turnCmd.speed        = speed;
+  task.turnCmd.timeout      = timeoutMs;
+  // etc.
+
+  taskQueue.push(task);
 }

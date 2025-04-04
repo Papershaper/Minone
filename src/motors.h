@@ -17,8 +17,9 @@
 #define RIGHT_ENCODER_PIN 33
 
 enum MoveState { MOVE_IDLE, MOVE_INIT, MOVE_IN_PROGRESS, MOVE_COMPLETE, MOVE_ABORT };
-extern MoveState moveState;
+
 struct MoveCommand {
+  MoveState moveState;
   float targetDistance; // in cm
   // targetX ?
   // targetY
@@ -30,14 +31,17 @@ struct MoveCommand {
 };
 extern MoveCommand currentMove;
 
-// TURN 
+// TURN -- use the sam Finite State Machine for Scan.
 enum TurnState { TURN_IDLE, TURN_INIT, TURN_IN_PROGRESS, TURN_COMPLETE, TURN_ABORT };
 
 struct TurnCommand {
   TurnState turnState;
-  float targetAngle;      
+  float targetAngle;
+  float targetAngle_rad;
+  float startAngle_rad;
   int speed;
-  // etc...
+  unsigned long startTime;
+  unsigned long timeout;
 };
 
 // --- Odometry Parameters ---
@@ -63,6 +67,7 @@ void setMotorSpeed(int leftSpeed, int rightSpeed);
 void setupEncoders();
 void updateOdometry();
 void startMove(float distance, int speed, unsigned long timeout_ms);
-void updateMove();
+bool updateMoveTask(MoveCommand &cmd);
+bool updateTurnTask(TurnCommand &cmd);
 
 #endif // MOTORS_H
