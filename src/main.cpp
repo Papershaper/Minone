@@ -31,7 +31,7 @@ MQTTManager mqttManager(mqttClient);
 // Define robot agent states
 enum RobotState { STANDBY, MANUAL, AUTONOMOUS, PAUSED, ERROR };
 // Global variable to hold the current agent state
-RobotState currentRobotState = AUTONOMOUS;
+RobotState currentRobotState = STANDBY;
 
 // --- Global Agent State for Automated Mode ---
 enum AgentState { STATE_IDLE, STATE_SWEEP, STATE_MOVE };
@@ -126,9 +126,10 @@ void loop() {
   handleHeartbeat();    // Blink LED for system heartbeat
   updateOdometry();     // keep the odometry up to date
   updateTelemetry();    // Publish telemetry and map at intervals
-  updateRobotAgent();   // Call the robot decision-making stub
-
   processIncomingCommands();  //new MQTT commands or other inputs
+
+  // non-blocking robot controls
+  updateMove();
 
   //updateRobotState();  //Review current high level state; room for new modes -Docking, charging
   switch(currentRobotState) {
@@ -139,6 +140,7 @@ void loop() {
       updateRobotAgent();
       break;
     case STANDBY:
+      //wait for action
       break;
     case PAUSED:
       break;
@@ -241,30 +243,11 @@ void updateRobotAgent() {
     }
     
     case STATE_MOVE: {
+      // Command the robot to START a MOVE -- this is temporary
       // Command robot to move forward 0-255, must be >200
-      setMotorSpeed(200, 200);
+      startMove(MOVE_DISTANCE_CM, 200, 10000);  //move 10cm, at 200, timeout 10s
 
-      // Calculate distance moved using odometry (assuming updateOdometry() is called regularly)
-      float dx = posX_cm - moveStartPosX;
-      float dy = posY_cm - moveStartPosY;
-      float distanceMoved = sqrt(dx * dx + dy * dy);
-
-      //DEBUG
-      if (DEBUG){
-        Serial.print("MOVE - dx: ");
-        Serial.print(dx);
-        Serial.print(" dy: ");
-        Serial.print(dy);
-        Serial.print(" distance: ");
-        Serial.println(distanceMoved);
-      }
-
-      // If moved 40 cm or more, stop and return to sweeping
-      if (distanceMoved >= MOVE_DISTANCE_CM) {
-        setMotorSpeed(0, 0);  // Stop the motors
-        autoAgentState = STATE_SWEEP;  // Switch back to sensor sweep
-        lastSweepTime = now;      // Reset sweep timing -- DEPRECATED
-      }
+      autoAgentState = STATE_IDLE;  // nonblcking swith to itdle form now.
       break;
     }
   }

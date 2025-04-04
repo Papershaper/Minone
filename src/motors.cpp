@@ -8,6 +8,10 @@ float posX_cm = 0;         // Initialize these to your starting position
 float posY_cm = 0;
 float orientation_rad = 0.0;
 
+// Define the global move state and command.
+MoveState moveState = MOVE_IDLE;
+MoveCommand currentMove;
+
 // --- Odometry Calculation Constants ---
 const float WHEEL_DIAMETER_CM = 7.2;      // 72 mm. Example: 5 cm diameter wheel
 const int   ENCODER_PULSES_PER_REV = 509;   // actual 508.8
@@ -120,16 +124,70 @@ void updateOdometry() {
   posY_cm += deltaDistance * sin(orientation_rad);
 }
 
-// --- Example Motor Command Handler ---
-// Expected MQTT command format: "MOTOR:<left_speed>,<right_speed>"
-// For example, "MOTOR:100,-100" drives the left motor forward at 100 and right motor in reverse at 100.
-void handleMotorCommand(String command) {
-  if (command.startsWith("MOTOR:")) {
-    int commaIndex = command.indexOf(',');
-    if (commaIndex > 0) {
-      int leftSpeed = command.substring(6, commaIndex).toInt();
-      int rightSpeed = command.substring(commaIndex + 1).toInt();
-      setMotorSpeed(leftSpeed, rightSpeed);
+// --- Movement Handlers = non-blocking ---
+// ========================================
+
+void startMove(float distance, int speed, unsigned long timeout_ms) {
+  currentMove.targetDistance = distance;
+  currentMove.speed = speed;
+  currentMove.timeout = timeout_ms;
+  currentMove.startTime = millis();
+  currentMove.startX = posX_cm;
+  currentMove.startY = posY_cm;
+  moveState = MOVE_INIT;
+}
+
+void updateMove() {
+  if (moveState == MOVE_IDLE) return;
+  
+  unsigned long now = millis();
+
+  switch(moveState) {
+    case MOVE_INIT:
+      // Start the motors
+      setMotorSpeed(currentMove.speed, currentMove.speed);
+      moveState = MOVE_IN_PROGRESS;
+      Serial.println("Move started.");
+      break;
+      
+    case MOVE_IN_PROGRESS: {
+      // Check for timeout
+      if (now - currentMove.startTime >= currentMove.timeout) {
+        moveState = MOVE_ABORT;
+        Serial.println("Move timed out.");
+        break;
+      }
+      
+      // Calculate distance moved using odometry
+      float dx = posX_cm - currentMove.startX;
+      float dy = posY_cm - currentMove.startY;
+      float distanceMoved = sqrt(dx * dx + dy * dy);
+      
+      // Check if target reached
+      if (distanceMoved >= currentMove.targetDistance) {
+        moveState = MOVE_COMPLETE;
+        Serial.println("Move complete.");
+      }
+      
+      // Optionally add checks here for obstacles or being stuck
+      // e.g., if (isStuck()) { moveState = MOVE_ABORT; }
+      
+      break;
     }
+      
+    case MOVE_COMPLETE:
+      setMotorSpeed(0, 0); // Stop motors
+      moveState = MOVE_IDLE;
+      break;
+      
+    case MOVE_ABORT:
+      setMotorSpeed(0, 0); // Stop motors
+      moveState = MOVE_IDLE;
+      // Handle error state or notify the user/system
+      Serial.println("Move aborted.");
+      break;
+      
+    default:
+      break;
   }
 }

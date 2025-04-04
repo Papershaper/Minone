@@ -16,6 +16,30 @@
 #define LEFT_ENCODER_PIN 32
 #define RIGHT_ENCODER_PIN 33
 
+enum MoveState { MOVE_IDLE, MOVE_INIT, MOVE_IN_PROGRESS, MOVE_COMPLETE, MOVE_ABORT };
+extern MoveState moveState;
+struct MoveCommand {
+  float targetDistance; // in cm
+  // targetX ?
+  // targetY
+  int speed;            // motor speed
+  unsigned long startTime;
+  unsigned long timeout; // max allowed time in milliseconds
+  float startX;
+  float startY;
+};
+extern MoveCommand currentMove;
+
+// TURN 
+enum TurnState { TURN_IDLE, TURN_INIT, TURN_IN_PROGRESS, TURN_COMPLETE, TURN_ABORT };
+
+struct TurnCommand {
+  TurnState turnState;
+  float targetAngle;      
+  int speed;
+  // etc...
+};
+
 // --- Odometry Parameters ---
 extern volatile long leftEncoderCount;
 extern volatile long rightEncoderCount;
@@ -38,6 +62,7 @@ void setupMotors();
 void setMotorSpeed(int leftSpeed, int rightSpeed);
 void setupEncoders();
 void updateOdometry();
-void handleMotorCommand(String command);
+void startMove(float distance, int speed, unsigned long timeout_ms);
+void updateMove();
 
 #endif // MOTORS_H
