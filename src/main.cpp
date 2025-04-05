@@ -7,7 +7,8 @@
 #include <queue>
 #include "globals.h"
 #include "mqtt_manager.h"
-#include "motors.h" 
+#include "motors.h"
+#include "sensor.h"
 #include "secrets.h"   // Sensitive credentials (gitignored)
 
 // Define LED pin and sensor pins
@@ -42,7 +43,7 @@ struct RobotTask {
   TaskType type;
   MoveCommand moveCmd;  // for TASK_MOVE
   TurnCommand turnCmd;  // for TASK_TURN
-  //ScanCommand scanCmd;  // for TASK_SCAN
+  ScanCommand scanCmd;  // for TASK_SCAN
   // Additional commands can go here
   // only 'activate' the relevant command in the TaskType
 };
@@ -69,15 +70,7 @@ int robotX = MAP_WIDTH / 2;  // 60 - center
 int robotY = MAP_HEIGHT / 2; // 60 - center
 const int CELL_SIZE_CM = 10;
 
-// Servo and sweep settings
-Servo sweepServo;
-const int SERVO_PIN = 4;           // initialized with strong type
-const int SERVO_CENTER = 90;       // Servo center position (forward)
-const int SWEEP_MIN = 45;          // Minimum servo angle (left sweep limit)
-const int SWEEP_MAX = 135;         // Maximum servo angle (right sweep limit)
-const int SWEEP_STEP = 5;          // Angle increment in degrees
-const int SERVO_DELAY_MS = 40;     // Delay for servo to settle, 38ms timeout for sensor
-const int SENSOR_MAX_DIST = 200;   // maximum distance given tof
+
 
 // Function prototypes
 void setupWiFi();
@@ -101,6 +94,7 @@ void updateTaskRunner();
 bool updateRobotTask(RobotTask &task); //activate the RobotTask wrapper pattern
 void enqueueMoveTask(float distanceCm, int speed, unsigned long timeoutMs);
 void enqueueTurnTask(float angleDeg, int speed, unsigned long timeoutMs);
+void enqueueScanTask(float startAngle, float endAngle, int speed, unsigned long timeoutMs);
 
 
 //-------- SETUP ---------------------------//
@@ -198,8 +192,7 @@ bool updateRobotTask(RobotTask &task) {
     case TASK_TURN:
       return updateTurnTask(task.turnCmd);
     case TASK_SCAN:
-      //return updateScanTask(task.scanCmd);
-      return true;
+      return updateScanTask(task.scanCmd);
     default:
       // no-op or immediately done
       return true;
@@ -232,7 +225,14 @@ void updateManualCommands() {
 
         enqueueTurnTask(angle, speed, timeout);
       }
-      // add in SCAN
+      else if (strcmp(action, "scan") == 0) {
+        float startAngle   = doc["start_angle"] | 45.0;
+        float endAngle   = doc["end_angle"] | 135.0;
+        int speed     = doc["speed"]     | 40;   //pause in ms
+        unsigned long timeout = doc["timeout"] | 5000;
+
+        enqueueScanTask(startAngle, endAngle, speed, timeout);
+      }
       else {
         Serial.println("Unknown action in JSON");
       }
@@ -268,7 +268,6 @@ void updateRobotAgent() {
       // Perform the full, blocking sensor sweep.
       Serial.println("Blocking sensor sweep...");
       sweepAndUpdateMap();  // This function blocks while sweeping
-      sweepServo.write(SERVO_CENTER);
       autoAgentState = STATE_MOVE;
       // currentAgentState = STATE_IDLE;
       break;
@@ -591,6 +590,19 @@ void enqueueTurnTask(float angleDeg, int speed, unsigned long timeoutMs) {
   task.turnCmd.targetAngle  = angleDeg;
   task.turnCmd.speed        = speed;
   task.turnCmd.timeout      = timeoutMs;
+  // etc.
+
+  taskQueue.push(task);
+}
+
+void enqueueScanTask(float startAngle, float endAngle, int speed, unsigned long timeoutMs) {
+  RobotTask task;
+  task.type = TASK_SCAN;
+  task.scanCmd.scanState    = SCAN_IDLE;
+  task.scanCmd.startAngle  = startAngle;
+  task.scanCmd.endAngle    = endAngle;
+  task.scanCmd.speed        = speed;
+  task.scanCmd.timeout      = timeoutMs;
   // etc.
 
   taskQueue.push(task);
