@@ -4,6 +4,8 @@
 // --- Global Variable Definitions ---
 volatile long leftEncoderCount = 0;
 volatile long rightEncoderCount = 0;
+int leftMotorDirection = 1;
+int rightMotorDirection = 1;
 
 float posX_cm = 0;         // Initialize these to your starting position
 float posY_cm = 0;
@@ -55,9 +57,11 @@ void setMotorSpeed(int leftSpeed, int rightSpeed) {
   if (leftSpeed >= 0) {
     digitalWrite(LEFT_MOTOR_IN1, HIGH);
     digitalWrite(LEFT_MOTOR_IN2, LOW);
+    leftMotorDirection = 1;
   } else {
     digitalWrite(LEFT_MOTOR_IN1, LOW);
     digitalWrite(LEFT_MOTOR_IN2, HIGH);
+    leftMotorDirection = -1;
     leftSpeed = -leftSpeed;
   }
   leftSpeed = constrain(leftSpeed, 0, 255);
@@ -67,9 +71,11 @@ void setMotorSpeed(int leftSpeed, int rightSpeed) {
   if (rightSpeed >= 0) {
     digitalWrite(RIGHT_MOTOR_IN1, HIGH);
     digitalWrite(RIGHT_MOTOR_IN2, LOW);
+    rightMotorDirection = 1;
   } else {
     digitalWrite(RIGHT_MOTOR_IN1, LOW);
     digitalWrite(RIGHT_MOTOR_IN2, HIGH);
+    rightMotorDirection = -1;
     rightSpeed = -rightSpeed;
   }
   rightSpeed = constrain(rightSpeed, 0, 255);
@@ -110,6 +116,10 @@ void updateOdometry() {
   lastLeftCount = currentLeft;
   lastRightCount = currentRight;
 
+  // Incorporate motor direction into the pulse counts
+  deltaLeft *= leftMotorDirection;
+  deltaRight *= rightMotorDirection;
+
   // Calculate distance travelled by each wheel (in cm)
   float leftDistance = (deltaLeft * (PI * WHEEL_DIAMETER_CM)) / ENCODER_PULSES_PER_REV;
   float rightDistance = (deltaRight * (PI * WHEEL_DIAMETER_CM)) / ENCODER_PULSES_PER_REV;
@@ -117,6 +127,10 @@ void updateOdometry() {
   // Compute average displacement and change in orientation
   float deltaDistance = (leftDistance + rightDistance) / 2.0;
   float deltaTheta = (rightDistance - leftDistance) / WHEEL_BASE_CM;
+  // if pivoting 
+  if (leftMotorDirection != rightMotorDirection) {
+    deltaTheta *= 2.0;
+  }
 
   // Update orientation (radians)
   orientation_rad += deltaTheta;
@@ -218,8 +232,9 @@ bool updateTurnTask(TurnCommand &cmd) {
     return false;
 
     case TURN_IN_PROGRESS: {
+      float turnedAngle = orientation_rad - cmd.startAngle_rad;
       // Check if angle is reached
-      if (fabs(orientation_rad - cmd.targetAngle_rad) < ANGLE_TOLERANCE) {
+      if (fabs(turnedAngle - cmd.targetAngle_rad) < ANGLE_TOLERANCE) {
           // Stop motors
           setMotorSpeed(0,0);
           cmd.turnState = TURN_COMPLETE;

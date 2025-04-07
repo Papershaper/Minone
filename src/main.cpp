@@ -249,38 +249,58 @@ void updateRobotAgent() {
   static unsigned long idleStartTime = 0;
   unsigned long now = millis();
 
-  switch (autoAgentState) {
-    case STATE_IDLE: {
-      // On first entry into IDLE, record the start time.
-      if (idleStartTime == 0) {
-        idleStartTime = now;
-        Serial.println("Entering IDLE state: pausing for 5 seconds.");
-      }
-      if (now - idleStartTime >= 5000) {  // 60,000 ms = 60 sec
-        idleStartTime = 0;  // Reset for next idle period
-        autoAgentState = STATE_SWEEP;
-        Serial.println("Idle complete. Switching to SWEEP state.");
-      }
-      break;
-    }
+  if (taskQueue.empty()){
+    // for Automation, if the taskQueue is empty queu up these tasks:
 
-    case STATE_SWEEP: {
-      // Perform the full, blocking sensor sweep.
-      Serial.println("Blocking sensor sweep...");
-      sweepAndUpdateMap();  // This function blocks while sweeping
-      autoAgentState = STATE_MOVE;
-      // currentAgentState = STATE_IDLE;
-      break;
-    }
+    enqueueScanTask(40, 140, 20, 5000);
+    enqueueScanTask(40, 140, 20, 5000);
+    enqueueTurnTask(180, 200, 10000);
+    enqueueMoveTask(20.0f, 200, 10000);  // e.g., 10 cm, speed=200, 10s timeout
+    enqueueTurnTask(180, 200, 3000);
+    enqueueMoveTask(40.0f, 200, 10000);  // e.g., 10 cm, speed=200, 10s timeout
+    enqueueTurnTask(180, 200, 3000);
+    enqueueMoveTask(40.0f, 200, 10000);  // e.g., 10 cm, speed=200, 10s timeout
+    enqueueTurnTask(180, 200, 3000);
+    enqueueMoveTask(40.0f, 200, 10000);  // e.g., 10 cm, speed=200, 10s timeout
+    enqueueTurnTask(180, 200, 3000);
+    enqueueMoveTask(40.0f, 200, 10000);  // e.g., 10 cm, speed=200, 10s timeout
+    enqueueTurnTask(180, 200, 10000);
+    enqueueScanTask(40, 140, 20, 5000);
     
-    case STATE_MOVE: {
-      Serial.println("Enqueueing a move task from agent...");
-      enqueueMoveTask(10.0f, 200, 10000);  // e.g., 10 cm, speed=200, 10s timeout
-
-      autoAgentState = STATE_IDLE;  // nonblcking swith to itdle form now.
-      break;
-    }
   }
+
+  // switch (autoAgentState) {
+  //   case STATE_IDLE: {
+  //     // On first entry into IDLE, record the start time.
+  //     if (idleStartTime == 0) {
+  //       idleStartTime = now;
+  //       Serial.println("Entering IDLE state: pausing for 5 seconds.");
+  //     }
+  //     if (now - idleStartTime >= 5000) {  // 60,000 ms = 60 sec
+  //       idleStartTime = 0;  // Reset for next idle period
+  //       autoAgentState = STATE_SWEEP;
+  //       Serial.println("Idle complete. Switching to SWEEP state.");
+  //     }
+  //     break;
+  //   }
+
+  //   case STATE_SWEEP: {
+  //     // Perform the full, blocking sensor sweep.
+  //     Serial.println("Blocking sensor sweep...");
+  //     sweepAndUpdateMap();  // This function blocks while sweeping
+  //     autoAgentState = STATE_MOVE;
+  //     // currentAgentState = STATE_IDLE;
+  //     break;
+  //   }
+    
+  //   case STATE_MOVE: {
+  //     Serial.println("Enqueueing a move task from agent...");
+  //     enqueueMoveTask(10.0f, 200, 10000);  // e.g., 10 cm, speed=200, 10s timeout
+
+  //     autoAgentState = STATE_IDLE;  // nonblcking swith to itdle form now.
+  //     break;
+  //   }
+  // }
 }
 
 void processIncomingCommands() {
