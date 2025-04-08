@@ -234,7 +234,7 @@ bool updateTurnTask(TurnCommand &cmd) {
     case TURN_IN_PROGRESS: {
       float turnedAngle = orientation_rad - cmd.startAngle_rad;
       // Check if angle is reached
-      if (fabs(turnedAngle - cmd.targetAngle_rad) < ANGLE_TOLERANCE) {
+      if (fabs(turnedAngle) >= fabs(cmd.targetAngle_rad) - ANGLE_TOLERANCE) {
           // Stop motors
           setMotorSpeed(0,0);
           cmd.turnState = TURN_COMPLETE;
@@ -242,7 +242,6 @@ bool updateTurnTask(TurnCommand &cmd) {
       }
       // Check for timeout
       if (millis() - cmd.startTime > cmd.timeout) {
-          // Possibly abort
           cmd.turnState = TURN_ABORT;
           return false;
       }

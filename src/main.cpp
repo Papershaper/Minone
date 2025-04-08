@@ -138,7 +138,7 @@ void setup() {
 // ----- Main Loop ------------------ //
 void loop() {
   mqttManager.maintain();       // Process MQTT messages and ensure connectivity
-  processOTA();         // Handle OTA updates
+  //processOTA();         // Handle OTA updates
   handleHeartbeat();    // Blink LED for system heartbeat
   updateOdometry();     // keep the odometry up to date
   updateTelemetry();    // Publish telemetry and map at intervals
