@@ -145,11 +145,13 @@ void updateOdometry() {
 
 void startMove(float distance, int speed, unsigned long timeout_ms) {
   currentMove.targetDistance = distance;
+  currentMove.direction = (distance > 0.0f) - (distance < 0.0f);  // should return -1, 1, or 0
   currentMove.speed = speed;
   currentMove.timeout = timeout_ms;
   currentMove.startTime = millis();
   currentMove.startX = posX_cm;
   currentMove.startY = posY_cm;
+  currentMove.startOrientation = orientation_rad;
   currentMove.moveState = MOVE_INIT;
 }
 
@@ -165,9 +167,11 @@ bool updateMoveTask(MoveCommand &cmd) {
     // 1) Capture start X, Y 
     cmd.startX = posX_cm;  
     cmd.startY = posY_cm;
+    cmd.direction = (cmd.targetDistance > 0.0f) - (cmd.targetDistance < 0.0f);
+    cmd.startOrientation = orientation_rad;
     cmd.startTime = millis();
     // 2) Initialize motors
-    setMotorSpeed(cmd.speed, cmd.speed); 
+    setMotorSpeed(cmd.speed * cmd.direction, cmd.speed * cmd.direction); 
     // 3) Transition to IN_PROGRESS
     cmd.moveState = MOVE_IN_PROGRESS;
     return false;
@@ -176,10 +180,10 @@ bool updateMoveTask(MoveCommand &cmd) {
     // Check how far we've traveled
     float dx = posX_cm - cmd.startX;
     float dy = posY_cm - cmd.startY;
-    float dist = sqrt(dx*dx + dy*dy);
+    float dist = dx * cos(cmd.startOrientation) + dy * sin(cmd.startOrientation);
     
     // Check if distance is reached
-    if (dist >= cmd.targetDistance) {
+    if (fabs(dist) >= fabs(cmd.targetDistance)) {
         // Stop motors
         setMotorSpeed(0,0);
         cmd.moveState = MOVE_COMPLETE;

@@ -21,6 +21,7 @@ enum MoveState { MOVE_IDLE, MOVE_INIT, MOVE_IN_PROGRESS, MOVE_COMPLETE, MOVE_ABO
 struct MoveCommand {
   MoveState moveState;
   float targetDistance; // in cm
+  int direction;
   // targetX ?
   // targetY
   int speed;            // motor speed
@@ -28,6 +29,7 @@ struct MoveCommand {
   unsigned long timeout; // max allowed time in milliseconds
   float startX;
   float startY;
+  float startOrientation;
 };
 extern MoveCommand currentMove;
 
