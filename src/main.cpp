@@ -15,15 +15,8 @@
 #ifndef LED_BUILTIN
 #define LED_BUILTIN 2
 #endif
-#define TRIG_PIN 5      
-#define ECHO_PIN 18
-// Occupancy map
-#define MAP_WIDTH 120
-#define MAP_HEIGHT 120
-#define UNKNOWN 255  //unexplored- frontier
-#define FREE 0
-#define OCCUPIED 1
-#define ROBOT 2
+
+
 
 // Global objects
 WiFiClient espClient;
@@ -68,19 +61,15 @@ unsigned long lastHeartbeat = 0;
 uint8_t occupancyGrid[MAP_HEIGHT][MAP_WIDTH];
 int robotX = MAP_WIDTH / 2;  // 60 - center
 int robotY = MAP_HEIGHT / 2; // 60 - center
-const int CELL_SIZE_CM = 10;
-
 
 
 // Function prototypes
 void setupWiFi();
-long readUltrasonicDistance(int triggerPin, int echoPin);
 void handleMQTTCommands(String command);  //future plans
 void setupOTA();
 void initializeMap();
 void updateCell(int gridX, int gridY, uint8_t value);
 void markLineFree(int x0, int y0, int x1, int y1);
-void sweepAndUpdateMap();  //function prototype just for grins
 void publishMap();
 void processOTA();
 void handleHeartbeat();
@@ -365,7 +354,7 @@ void performSensorSweep() {
 // This function publishes telemetry data and the local map.
 void publishTelemetry() {
   // Example telemetry: you might update this later to include position, pose, and error statuses.
-  long distance = readUltrasonicDistance(TRIG_PIN, ECHO_PIN);
+  long distance = readUltrasonicDistance();
   int rssi = WiFi.RSSI();
   unsigned long uptime = millis() / 1000;  // Uptime in seconds
 
@@ -457,49 +446,6 @@ void markLineFree(int x0, int y0, int x1, int y1) {
   }
 }
 
-// Sweep function: Moves the servo, reads distance, and updates the map.
-void sweepAndUpdateMap() {
-  // move to start and settle.
-  sweepServo.write(SWEEP_MIN);
-  delay(200);
-
-  // Sweep from SWEEP_MIN to SWEEP_MAX
-  for (int angle = SWEEP_MIN; angle <= SWEEP_MAX; angle += SWEEP_STEP) {
-    sweepServo.write(angle);
-    delay(SERVO_DELAY_MS);
-    
-    // Get the sensor reading in centimeters
-    long distance_cm = readUltrasonicDistance(TRIG_PIN, ECHO_PIN);
-    
-    // Calculate the global map angle
-    float global_angle = orientation_rad + (angle - SERVO_CENTER) * (PI / 180.0);
-    
-    // Convert the measured distance to number of cells
-    int cellsAway = distance_cm / CELL_SIZE_CM;
-
-    // Compute the grid coordinates of the detected obstacle
-    // Assuming robot's forward (0° relative) corresponds to increasing X.
-    int obstacleX = robotX + (int)(cellsAway * cos(global_angle));
-    int obstacleY = robotY + (int)(cellsAway * sin(global_angle));
-    
-    // Mark all cells along the line from the robot to the obstacle as FREE
-    markLineFree(robotX, robotY, obstacleX, obstacleY);
-    
-    // Update the detected cell as OCCUPIED unless it is at max
-    if (distance_cm < SENSOR_MAX_DIST) {
-      updateCell(obstacleX, obstacleY, OCCUPIED);
-    } else {
-      updateCell(obstacleX, obstacleY, FREE);  // Either free or unkown
-    }
-    
-
-  }
-  // Delay after a complete sweep to allow time for the last reading
-  delay(200);
-  sweepServo.write(SERVO_CENTER);  // Center the servo
-  delay(200);
-}
-
 // Publish the occupancy grid over MQTT
 void publishMap() {
   // Mark the robot's current location on the grid
@@ -541,27 +487,6 @@ void handleMQTTCommands(String command) {
     Serial.println(" ms");
   }
   // Additional commands can be added here.
-}
-
-// ===== Ultrasonic Sensor Reading =====
-long readUltrasonicDistance(int triggerPin, int echoPin) {
-  digitalWrite(triggerPin, LOW);
-  delayMicroseconds(2);
-  digitalWrite(triggerPin, HIGH);
-  delayMicroseconds(10);
-  digitalWrite(triggerPin, LOW);
-  // Use a timeout of 30000 microseconds (30 ms)
-  long duration = pulseIn(echoPin, HIGH, 30000);
-  // If no echo is received, treat as out-of-range (200 cm)
-  if (duration == 0) {
-    return SENSOR_MAX_DIST;
-  }
-
-  long distanceCm = (duration * 0.034) / 2;
-  if(distanceCm > SENSOR_MAX_DIST) {
-    distanceCm = SENSOR_MAX_DIST;
-  }
-  return distanceCm;
 }
 
 // ===== OTA Setup =====
