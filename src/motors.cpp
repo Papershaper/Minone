@@ -95,8 +95,8 @@ void IRAM_ATTR rightEncoderISR() {
 void setupEncoders() {
   pinMode(LEFT_ENCODER_PIN, INPUT_PULLUP);
   pinMode(RIGHT_ENCODER_PIN, INPUT_PULLUP);
-  attachInterrupt(digitalPinToInterrupt(LEFT_ENCODER_PIN), leftEncoderISR, RISING);
-  attachInterrupt(digitalPinToInterrupt(RIGHT_ENCODER_PIN), rightEncoderISR, RISING);
+  attachInterrupt(digitalPinToInterrupt(LEFT_ENCODER_PIN), leftEncoderISR, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(RIGHT_ENCODER_PIN), rightEncoderISR, CHANGE);
 }
 
 // --- Odometry Update ---
@@ -127,10 +127,6 @@ void updateOdometry() {
   // Compute average displacement and change in orientation
   float deltaDistance = (leftDistance + rightDistance) / 2.0;
   float deltaTheta = (rightDistance - leftDistance) / WHEEL_BASE_CM;
-  // if pivoting 
-  if (leftMotorDirection != rightMotorDirection) {
-    deltaTheta *= 2.0;
-  }
 
   // Update orientation (radians)
   orientation_rad += deltaTheta;
@@ -177,10 +173,11 @@ bool updateMoveTask(MoveCommand &cmd) {
     return false;
 
     case MOVE_IN_PROGRESS: {
-    // Check how far we've traveled
+    // Check how far we've traveled  -- CHECK DEPRECATED
     float dx = posX_cm - cmd.startX;
     float dy = posY_cm - cmd.startY;
-    float dist = dx * cos(cmd.startOrientation) + dy * sin(cmd.startOrientation);
+    float dist = dx * cos(cmd.startOrientation) + dy * sin(cmd.startOrientation);  
+    unsigned long elapsedTime = millis() - cmd.startTime;
     
     // Check if distance is reached
     if (fabs(dist) >= fabs(cmd.targetDistance)) {

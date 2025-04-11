@@ -22,8 +22,6 @@ struct MoveCommand {
   MoveState moveState;
   float targetDistance; // in cm
   int direction;
-  // targetX ?
-  // targetY
   int speed;            // motor speed
   unsigned long startTime;
   unsigned long timeout; // max allowed time in milliseconds
