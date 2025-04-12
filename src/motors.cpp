@@ -130,10 +130,17 @@ void updateOdometry() {
 
   // Update orientation (radians)
   orientation_rad += deltaTheta;
+  orientation_rad = normalizeAngle(orientation_rad);
 
   // Update position (in cm)
   posX_cm += deltaDistance * cos(orientation_rad);
   posY_cm += deltaDistance * sin(orientation_rad);
+}
+
+float normalizeAngle(float angle) {
+  while (angle > M_PI) angle -= 2.0 * M_PI;
+  while (angle < -M_PI) angle += 2.0 * M_PI;
+  return angle;
 }
 
 // --- Movement Handlers = non-blocking ---
@@ -209,6 +216,7 @@ bool updateMoveTask(MoveCommand &cmd) {
 }
 
 bool updateTurnTask(TurnCommand &cmd) {
+  // Follows ROS standard where positive turn angle is counterclockwise (left)
   switch (cmd.turnState) {
 
     case TURN_IDLE:
@@ -223,9 +231,9 @@ bool updateTurnTask(TurnCommand &cmd) {
     cmd.startTime = millis();
     // 2) Initialize motors in correct direction
     if (cmd.targetAngle_rad > 0) {
-      setMotorSpeed(cmd.speed, -cmd.speed);
-    } else {
       setMotorSpeed(-cmd.speed, cmd.speed);
+    } else {
+      setMotorSpeed(cmd.speed, -cmd.speed);
     }
      
     // 3) Transition to IN_PROGRESS

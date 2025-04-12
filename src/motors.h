@@ -65,6 +65,7 @@ extern const int PWM_RESOLUTION;
 void setupMotors();
 void setMotorSpeed(int leftSpeed, int rightSpeed);
 void setupEncoders();
+float normalizeAngle(float angle);
 void updateOdometry();
 void startMove(float distance, int speed, unsigned long timeout_ms);
 bool updateMoveTask(MoveCommand &cmd);

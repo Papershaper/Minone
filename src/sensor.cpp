@@ -23,7 +23,7 @@ bool updateScanTask(ScanCommand &cmd) {
     
         case SCAN_IN_PROGRESS: 
             Serial.println("Blocking SCAN_IN_PROGRESS...");
-            sweepAndUpdateMap();  // This function blocks while sweeping
+            sweepAndUpdateMap(cmd.startAngle, cmd.endAngle, cmd.speed);  // This function blocks while sweeping
             cmd.scanState = SCAN_COMPLETE;
             return false;
         
@@ -40,29 +40,32 @@ bool updateScanTask(ScanCommand &cmd) {
 }
 
 // Sweep function: Moves the servo, reads distance, and updates the map.
-void sweepAndUpdateMap() {
+void sweepAndUpdateMap(int sweepMin, int sweepMax, int servoDelay) {
+  if ((sweepMin > sweepMax) || (sweepMin < SWEEP_MIN) || (sweepMax > SWEEP_MAX)) {
+    return;
+  }
   // move to start and settle.
-  sweepServo.write(SWEEP_MIN);
+  sweepServo.write(sweepMin);
   delay(200);
 
   // Sweep from SWEEP_MIN to SWEEP_MAX
   for (int angle = SWEEP_MIN; angle <= SWEEP_MAX; angle += SWEEP_STEP) {
     sweepServo.write(angle);
-    delay(SERVO_DELAY_MS);
+    delay(servoDelay);  //delay to make sure servo in correct position before sensor poll.
     
     // Get the sensor reading in centimeters
     long distance_cm = readUltrasonicDistance();
     
     // Calculate the global map angle
-    float global_angle = orientation_rad + (angle - SERVO_CENTER) * (PI / 180.0);
-    
-    // Convert the measured distance to number of cells
-    int cellsAway = distance_cm / CELL_SIZE_CM;
+    float global_angle = orientation_rad - (angle - SERVO_CENTER) * (PI / 180.0);
 
-    // Compute the grid coordinates of the detected obstacle
+    // Compute the grid coordinates of the detected obstacle, convert to cells
     // Assuming robot's forward (0° relative) corresponds to increasing X.
-    int obstacleX = robotX + (int)(cellsAway * cos(global_angle));
-    int obstacleY = robotY + (int)(cellsAway * sin(global_angle));
+    float dx_cm = distance_cm * cos(global_angle);
+    float dy_cm = distance_cm * sin(global_angle);
+
+    int obstacleX = robotX + (int)(dx_cm / CELL_SIZE_CM);
+    int obstacleY = robotY + (int)(dy_cm / CELL_SIZE_CM);
     
     // Mark all cells along the line from the robot to the obstacle as FREE
     markLineFree(robotX, robotY, obstacleX, obstacleY);
@@ -72,9 +75,7 @@ void sweepAndUpdateMap() {
       updateCell(obstacleX, obstacleY, OCCUPIED);
     } else {
       updateCell(obstacleX, obstacleY, FREE);  // Either free or unkown
-    }
-    
-
+    }  
   }
   // Delay after a complete sweep to allow time for the last reading
   delay(200);

@@ -59,8 +59,10 @@ unsigned long lastHeartbeat = 0;
 
 // Create the occupancy grid as a 2D array
 uint8_t occupancyGrid[MAP_HEIGHT][MAP_WIDTH];
-int robotX = MAP_WIDTH / 2;  // 60 - center
-int robotY = MAP_HEIGHT / 2; // 60 - center
+int startX = MAP_WIDTH / 2;  // 60 - center
+int startY = MAP_HEIGHT / 2; // 60 - center
+int robotX = startX;
+int robotY = startY;
 
 
 // Function prototypes
@@ -75,6 +77,7 @@ void processOTA();
 void handleHeartbeat();
 void publishTelemetry();
 void updateTelemetry();
+void updateRobotGridCoordinates();
 void updateRobotAgent();  // Now includes the sensor sweep and movement logic
 void processIncomingCommands();
 void updateManualCommands();
@@ -130,6 +133,7 @@ void loop() {
   //processOTA();         // Handle OTA updates
   handleHeartbeat();    // Blink LED for system heartbeat
   updateOdometry();     // keep the odometry up to date
+  updateRobotGridCoordinates();  //map cm movement to grid coordinates
   updateTelemetry();    // Publish telemetry and map at intervals
   processIncomingCommands();  //new MQTT commands or other inputs
   updateManualCommands();  //process any new commands
@@ -344,12 +348,6 @@ void handleHeartbeat() {
   }
 }
 
-// ----- Task Function: Sensor Sweep and Map Update ----- 
-void performSensorSweep() {
-  // Executes a full servo sweep and updates the occupancy grid
-  sweepAndUpdateMap();
-}
-
 // ----- Task Function: Publish Telemetry -----
 // This function publishes telemetry data and the local map.
 void publishTelemetry() {
@@ -415,6 +413,15 @@ void updateTelemetry() {
     publishTelemetry();
     lastTelemetry = currentMillis;
   }
+}
+
+void updateRobotGridCoordinates() {
+  // Assuming posX_cm and posY_cm are measured relative to the starting position
+  // and that moving forward increases posX_cm and moving to the left increases posY_cm
+  robotX = startX+ (int)(posX_cm / CELL_SIZE_CM);
+  robotY = startY + (int)(posY_cm / CELL_SIZE_CM);
+
+  // TODO check for the edge of the map
 }
 
 // ==================================
