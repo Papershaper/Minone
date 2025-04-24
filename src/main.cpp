@@ -6,6 +6,7 @@
 #include <ArduinoJson.h>
 #include <queue>
 #include "globals.h"
+#include "maps.h"
 #include "mqtt_manager.h"
 #include "motors.h"
 #include "sensor.h"
@@ -58,7 +59,6 @@ unsigned long lastTelemetry = 0;
 unsigned long lastHeartbeat = 0;
 
 // Create the occupancy grid as a 2D array
-uint8_t occupancyGrid[MAP_HEIGHT][MAP_WIDTH];
 int startX = MAP_WIDTH / 2;  // 60 - center
 int startY = MAP_HEIGHT / 2; // 60 - center
 int robotX = startX;
@@ -70,8 +70,8 @@ void setupWiFi();
 void handleMQTTCommands(String command);  //future plans
 void setupOTA();
 void initializeMap();
-void updateCell(int gridX, int gridY, uint8_t value);
-void markLineFree(int x0, int y0, int x1, int y1);
+void updateCell(int gridX, int gridY, uint8_t value);  //DEPRECATED
+void markLineFree(int x0, int y0, int x1, int y1);  //DEPRECATED
 void publishMap();
 void processOTA();
 void handleHeartbeat();
@@ -364,6 +364,8 @@ void publishTelemetry() {
   doc["posX_cm"] = posX_cm;
   doc["posY_cm"] = posY_cm;
   doc["orientation_rad"] = orientation_rad;
+  doc["gridX"] = robotX;
+  doc["gridY"] = robotY;
   
   switch (currentRobotState) {  //STANDBY, MANUAL, AUTONOMOUS, PAUSED, ERROR 
     case STANDBY:
@@ -424,44 +426,20 @@ void updateRobotGridCoordinates() {
   // TODO check for the edge of the map
 }
 
-// ==================================
-void initializeMap() {
-  for (int i = 0; i < MAP_HEIGHT; i++) {
-    for (int j = 0; j < MAP_WIDTH; j++) {
-      occupancyGrid[i][j] = UNKNOWN;  //Initialize as UNKNOWN
-    }
-  }
-}
 
-void updateCell(int gridX, int gridY, uint8_t value) {
-  if (gridX >= 0 && gridX < MAP_WIDTH && gridY >= 0 && gridY < MAP_HEIGHT) {
-    occupancyGrid[gridY][gridX] = value;
-  }
-}
-
-void markLineFree(int x0, int y0, int x1, int y1) {
-  int dx = abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
-  int dy = -abs(y1 - y0), sy = y0 < y1 ? 1 : -1; 
-  int err = dx + dy, e2; // error value e_xy
-
-  while (true) {
-    updateCell(x0, y0, FREE);  // mark current cell as FREE
-    if (x0 == x1 && y0 == y1) break;
-    e2 = 2 * err;
-    if (e2 >= dy) { err += dy; x0 += sx; }
-    if (e2 <= dx) { err += dx; y0 += sy; }
-  }
-}
-
-// Publish the occupancy grid over MQTT
 void publishMap() {
-  // Mark the robot's current location on the grid
-  updateCell(robotX, robotY, ROBOT);
-
   // Publish the raw binary map data  120x120 ~ 14.4 kb
+  // Create a temporary buffer to hold the uint8_t version of the map
+  uint8_t map_uint8[MAP_HEIGHT][MAP_WIDTH];
+
+  // Convert each float log-odds value to uint8_t
+  for (int i = 0; i < MAP_HEIGHT; i++) {
+      for (int j = 0; j < MAP_WIDTH; j++) {
+          map_uint8[i][j] = logOddsToUint8ForExport(occupancyGrid[i][j]);
+      }
+  }
   // topic:  "PolyMap/{self.robot_id}/slam"
-  mqttManager.publishMap((const uint8_t*)occupancyGrid, sizeof(occupancyGrid));
-  
+  mqttManager.publishMap((const uint8_t*)map_uint8, MAP_WIDTH * MAP_HEIGHT * sizeof(uint8_t));
 }
 
 // ===== WiFi Setup =====

@@ -4,14 +4,7 @@
 #include <Arduino.h>
 #include <queue>
 
-// Occupancy map
-#define MAP_WIDTH 120
-#define MAP_HEIGHT 120
-#define UNKNOWN 255  //unexplored- frontier
-#define FREE 0
-#define OCCUPIED 1
-#define ROBOT 2
-const int CELL_SIZE_CM = 10;
+
 
 // ---------- GLOBAL FLAGS FOR STATE COMMANDS ----------
 extern bool startManualFlag;
@@ -20,8 +13,7 @@ extern bool pauseFlag;
 extern bool resumeFlag;
 extern bool errorFlag;
 
-// In globals.h (or sensor.h if more appropriate)
-extern uint8_t occupancyGrid[MAP_HEIGHT][MAP_WIDTH];
+// In globals.h 
 extern int robotX;
 extern int robotY;
 extern float orientation_rad;

@@ -1,5 +1,7 @@
 #include "sensor.h"
 #include "globals.h"
+#include "maps.h"
+#include "motors.h"
 
 // global instances
 Servo sweepServo;
@@ -49,7 +51,7 @@ void sweepAndUpdateMap(int sweepMin, int sweepMax, int servoDelay) {
   delay(200);
 
   // Sweep from SWEEP_MIN to SWEEP_MAX
-  for (int angle = SWEEP_MIN; angle <= SWEEP_MAX; angle += SWEEP_STEP) {
+  for (int angle = sweepMin; angle <= sweepMax; angle += SWEEP_STEP) {
     sweepServo.write(angle);
     delay(servoDelay);  //delay to make sure servo in correct position before sensor poll.
     
@@ -57,6 +59,10 @@ void sweepAndUpdateMap(int sweepMin, int sweepMax, int servoDelay) {
     long distance_cm = readUltrasonicDistance();
     
     // Calculate the global map angle
+    // orientation_rad is the robot's current global heading
+    // angle is the servo angle relative to the robot's forward (SERVO_CENTER)
+    // float relative_angle_rad = (angle - SERVO_CENTER) * (M_PI / 180.0); // Convert servo angle to radians relative to robot forward
+    // float global_angle_rad = orientation_rad + relative_angle_rad; // Robot's global heading + relative sensor angle
     float global_angle = orientation_rad - (angle - SERVO_CENTER) * (PI / 180.0);
 
     // Compute the grid coordinates of the detected obstacle, convert to cells
@@ -64,18 +70,24 @@ void sweepAndUpdateMap(int sweepMin, int sweepMax, int servoDelay) {
     float dx_cm = distance_cm * cos(global_angle);
     float dy_cm = distance_cm * sin(global_angle);
 
+    float endX_cm = posX_cm + dx_cm;
+    float endY_cm = posY_cm + dy_cm;
+
     int obstacleX = robotX + (int)(dx_cm / CELL_SIZE_CM);
     int obstacleY = robotY + (int)(dy_cm / CELL_SIZE_CM);
     
-    // Mark all cells along the line from the robot to the obstacle as FREE
-    markLineFree(robotX, robotY, obstacleX, obstacleY);
+    // Mark all cells along the line from the robot to the obstacle as FREE --DEPRECATED
+    // markLineFree(robotX, robotY, obstacleX, obstacleY);  DEPRECATED
+    // Perform the probabilistic ray update on the float grid
+    probabilisticRayUpdate(posX_cm, posY_cm, endX_cm, endY_cm, (float)distance_cm);
+
     
-    // Update the detected cell as OCCUPIED unless it is at max
-    if (distance_cm < SENSOR_MAX_DIST) {
-      updateCell(obstacleX, obstacleY, OCCUPIED);
-    } else {
-      updateCell(obstacleX, obstacleY, FREE);  // Either free or unkown
-    }  
+    // Update the detected cell as OCCUPIED unless it is at max -- DEPRECATED by Log-odds
+    // if (distance_cm < SENSOR_MAX_DIST) {
+    //   updateCell(obstacleX, obstacleY, OCCUPIED);
+    // } else {
+    //   updateCell(obstacleX, obstacleY, FREE);  // Either free or unkown
+    // }  
   }
   // Delay after a complete sweep to allow time for the last reading
   delay(200);
