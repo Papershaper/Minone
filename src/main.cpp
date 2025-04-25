@@ -63,7 +63,8 @@ int startX = MAP_WIDTH / 2;  // 60 - center
 int startY = MAP_HEIGHT / 2; // 60 - center
 int robotX = startX;
 int robotY = startY;
-
+// declare once the export global_map
+uint8_t map_uint8[MAP_HEIGHT][MAP_WIDTH];   // 14 400 bytes in .bss
 
 // Function prototypes
 void setupWiFi();
@@ -262,38 +263,6 @@ void updateRobotAgent() {
     
   }
 
-  // switch (autoAgentState) {
-  //   case STATE_IDLE: {
-  //     // On first entry into IDLE, record the start time.
-  //     if (idleStartTime == 0) {
-  //       idleStartTime = now;
-  //       Serial.println("Entering IDLE state: pausing for 5 seconds.");
-  //     }
-  //     if (now - idleStartTime >= 5000) {  // 60,000 ms = 60 sec
-  //       idleStartTime = 0;  // Reset for next idle period
-  //       autoAgentState = STATE_SWEEP;
-  //       Serial.println("Idle complete. Switching to SWEEP state.");
-  //     }
-  //     break;
-  //   }
-
-  //   case STATE_SWEEP: {
-  //     // Perform the full, blocking sensor sweep.
-  //     Serial.println("Blocking sensor sweep...");
-  //     sweepAndUpdateMap();  // This function blocks while sweeping
-  //     autoAgentState = STATE_MOVE;
-  //     // currentAgentState = STATE_IDLE;
-  //     break;
-  //   }
-    
-  //   case STATE_MOVE: {
-  //     Serial.println("Enqueueing a move task from agent...");
-  //     enqueueMoveTask(10.0f, 200, 10000);  // e.g., 10 cm, speed=200, 10s timeout
-
-  //     autoAgentState = STATE_IDLE;  // nonblcking swith to itdle form now.
-  //     break;
-  //   }
-  // }
 }
 
 void processIncomingCommands() {
@@ -429,9 +398,6 @@ void updateRobotGridCoordinates() {
 
 void publishMap() {
   // Publish the raw binary map data  120x120 ~ 14.4 kb
-  // Create a temporary buffer to hold the uint8_t version of the map
-  uint8_t map_uint8[MAP_HEIGHT][MAP_WIDTH];
-
   // Convert each float log-odds value to uint8_t
   for (int i = 0; i < MAP_HEIGHT; i++) {
       for (int j = 0; j < MAP_WIDTH; j++) {

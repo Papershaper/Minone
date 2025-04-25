@@ -75,19 +75,10 @@ void sweepAndUpdateMap(int sweepMin, int sweepMax, int servoDelay) {
 
     int obstacleX = robotX + (int)(dx_cm / CELL_SIZE_CM);
     int obstacleY = robotY + (int)(dy_cm / CELL_SIZE_CM);
-    
-    // Mark all cells along the line from the robot to the obstacle as FREE --DEPRECATED
-    // markLineFree(robotX, robotY, obstacleX, obstacleY);  DEPRECATED
+
     // Perform the probabilistic ray update on the float grid
     probabilisticRayUpdate(posX_cm, posY_cm, endX_cm, endY_cm, (float)distance_cm);
 
-    
-    // Update the detected cell as OCCUPIED unless it is at max -- DEPRECATED by Log-odds
-    // if (distance_cm < SENSOR_MAX_DIST) {
-    //   updateCell(obstacleX, obstacleY, OCCUPIED);
-    // } else {
-    //   updateCell(obstacleX, obstacleY, FREE);  // Either free or unkown
-    // }  
   }
   // Delay after a complete sweep to allow time for the last reading
   delay(200);

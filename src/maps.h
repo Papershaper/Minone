@@ -6,13 +6,9 @@
 // Occupancy map
 #define MAP_WIDTH 120
 #define MAP_HEIGHT 120
-#define UNKNOWN 255  //change to 128 - Deprecated
-//#define FREE 0  // depricated
-//#define OCCUPIED 1 // depricated
-//#define ROBOT 2 // depricated
-const int CELL_SIZE_CM = 10;
+//#define UNKNOWN 255  //change to 128 - Deprecated
 
-//extern uint8_t occupancyGrid[MAP_HEIGHT][MAP_WIDTH];  //chagne to float
+const int CELL_SIZE_CM = 10;
 
 // Global map stored as floating-point log-odds
 extern float occupancyGrid[MAP_HEIGHT][MAP_WIDTH];
@@ -31,7 +27,7 @@ extern float occupancyGrid[MAP_HEIGHT][MAP_WIDTH];
 
 // Log-odds added for a "hit" (observed as occupied by sensor model)
 // Tune this based on sensor false positive rate. Lower for higher FP.
-#define LOG_ODDS_HIT 0.5 // Example: adds 0.5 log-odds towards occupied
+#define LOG_ODDS_HIT 0.65 // Example: adds 0.5 log-odds towards occupied (raised to .65)
 
 // Log-odds added for a "miss" (observed as free along ray by sensor model)
 // Tune this based on sensor false negative rate. Less negative for higher FN.
