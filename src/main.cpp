@@ -393,16 +393,31 @@ void updateRobotGridCoordinates() {
   robotY = startY + (int)(posY_cm / CELL_SIZE_CM);
 
   // TODO check for the edge of the map
+
+  // mark the cell the robot occupies as definitely free
+  if (robotX >= 0 && robotX < MAP_WIDTH &&
+    robotY >= 0 && robotY < MAP_HEIGHT) {
+      updateMapFree(robotX,robotY);
+  }
+
+  
 }
 
 
 void publishMap() {
   // Publish the raw binary map data  120x120 ~ 14.4 kb
   // Convert each float log-odds value to uint8_t
-  for (int i = 0; i < MAP_HEIGHT; i++) {
-      for (int j = 0; j < MAP_WIDTH; j++) {
-          map_uint8[i][j] = logOddsToUint8ForExport(occupancyGrid[i][j]);
-      }
+  for (int y = 0; y < MAP_HEIGHT; ++y) {
+    for (int x = 0; x < MAP_WIDTH; ++x) {
+      float l = occupancyGrid[y][x];
+
+      // clamp & quantise to LUT index
+      if (l >  L_CLAMP) l =  L_CLAMP;
+      if (l < -L_CLAMP) l = -L_CLAMP;
+
+      int idx = (int)roundf((l + L_CLAMP) / L_STEP);   // 0 … LUT_SIZE-1
+      map_uint8[y][x] = logOddsLUT[idx];
+    }
   }
   // topic:  "PolyMap/{self.robot_id}/slam"
   mqttManager.publishMap((const uint8_t*)map_uint8, MAP_WIDTH * MAP_HEIGHT * sizeof(uint8_t));

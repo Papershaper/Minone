@@ -3,6 +3,8 @@
 #include "secrets.h"   // For MQTT credentials
 #include <Arduino.h>
 
+extern MQTTManager mqttManager;  // already defined in main.cpp
+
 MQTTManager::MQTTManager(PubSubClient &client) : mqttClient(client) { }
 
 void MQTTManager::begin() {
@@ -85,4 +87,9 @@ void MQTTManager::mqttCallback(char* topic, byte* payload, unsigned int length) 
         // Push the command into the global queue
         manualTaskQueue.push(task);
       }
+}
+
+void networkMaintain()
+{
+    mqttManager.maintain();         // one-liner wrapper
 }

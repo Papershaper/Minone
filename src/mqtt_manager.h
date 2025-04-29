@@ -24,4 +24,7 @@ private:
     static void mqttCallback(char* topic, byte* payload, unsigned int length);
 };
 
+// forward
+void networkMaintain();
+
 #endif // MQTT_MANAGER_H

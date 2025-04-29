@@ -4,6 +4,7 @@
 
 // This is the DEFINITION of the occupancyGrid variable
 float occupancyGrid[MAP_HEIGHT][MAP_WIDTH];
+uint8_t logOddsLUT[LUT_SIZE];  // look up table
 
 // ==================================
 void initializeMap() {
@@ -12,29 +13,25 @@ void initializeMap() {
         occupancyGrid[i][j] = L0;  //Initialize as Log-odds UNKNOWN
       }
     }
+    buildLogOddsLUT();  // keeping it local to maps. otherwise in setup()
   }
 
-// ===================================================
-// Conversion Functions (only used for export)
-// ===================================================
-
-// Converts a floating-point log-odds value to a uint8_t grid value for export
-uint8_t logOddsToUint8ForExport(float log_odds) {
-    // Clamp log-odds to the export mapping range
-    if (log_odds > L_MAX_EXPORT) log_odds = L_MAX_EXPORT;
-    if (log_odds < -L_MAX_EXPORT) log_odds = -L_MAX_EXPORT;
-
-    // Map log-odds to 0-255 range
-    float mapped_value = log_odds * LOG_ODDS_EXPORT_SCALE + LOG_ODDS_EXPORT_OFFSET;
-
-    // Clamp the result to the uint8_t range [0, 255]
-    if (mapped_value < 0.0) mapped_value = 0.0;
-    if (mapped_value > 255.0) mapped_value = 255.0;
-
-    // Round and cast to uint8_t
-    return (uint8_t)round(mapped_value);
+void updateMapFree(int robotX, int robotY) {
+    // mark the map where the robot is as free
+    // TODO as the robot footprint grows, adjust to be larger
+    occupancyGrid[robotY][robotX] = L_FREE;
 }
 
+void buildLogOddsLUT()
+{
+    for (int i = 0; i < LUT_SIZE; ++i) {
+        float l = -L_CLAMP + i * L_STEP;       // actual log-odds
+        float mapped = l * LOG_ODDS_EXPORT_SCALE + LOG_ODDS_EXPORT_OFFSET;
+        if (mapped < 0)   mapped = 0;
+        if (mapped > 255) mapped = 255;
+        logOddsLUT[i] = (uint8_t)roundf(mapped);
+    }
+}
 
 // ===================================================
 // Probabilistic Update Function for a Single Cell (uses float)
@@ -54,7 +51,6 @@ void updateGridCellProbabilistic(int gridX, int gridY, float log_odds_observatio
         if (new_log_odds > L_MAX_LOCAL_CLAMP) new_log_odds = L_MAX_LOCAL_CLAMP;
         if (new_log_odds < -L_MAX_LOCAL_CLAMP) new_log_odds = -L_MAX_LOCAL_CLAMP;
 
-
         // Update the cell in the grid (using float)
         occupancyGrid[gridY][gridX] = new_log_odds;
     }
@@ -64,6 +60,7 @@ void updateGridCellProbabilistic(int gridX, int gridY, float log_odds_observatio
 void worldToGrid(float wx_cm, float wy_cm, int* gridX, int* gridY) {
     // Assuming (0,0) world corresponds to the center of the grid.
     // Adjust this if your grid origin is different.
+    // TODO validate, the origin is typically [60,60]
     *gridX = (int)round(wx_cm / CELL_SIZE_CM) + MAP_WIDTH / 2;
     *gridY = (int)round(wy_cm / CELL_SIZE_CM) + MAP_HEIGHT / 2;
 }
@@ -92,8 +89,8 @@ void probabilisticRayUpdate(float start_wx_cm, float start_wy_cm, float end_wx_c
         // Calculate distance from ray start to the current cell's center (approx)
         float cell_center_wx_cm = (current_x - MAP_WIDTH / 2) * CELL_SIZE_CM;
         float cell_center_wy_cm = (current_y - MAP_HEIGHT / 2) * CELL_SIZE_CM;
-        float dist_to_cell_center_cm = sqrt(pow(cell_center_wx_cm - start_wx_cm, 2) + pow(cell_center_wy_cm - start_wy_cm, 2));
-
+        //float dist_to_cell_center_cm = sqrt(pow(cell_center_wx_cm - start_wx_cm, 2) + pow(cell_center_wy_cm - start_wy_cm, 2));
+        float dist_to_cell_center_cm = hypotf((cell_center_wx_cm - start_wx_cm),(cell_center_wy_cm - start_wy_cm));
 
         // Check if we've reached the intended grid cell for the measurement endpoint
         if ((current_x == x1 && current_y == y1)) {
@@ -112,7 +109,6 @@ void probabilisticRayUpdate(float start_wx_cm, float start_wy_cm, float end_wx_c
 
 
         if (current_x == x1 && current_y == y1 && reached_endpoint_cell) break; // Stop when we update the endpoint cell
-
 
         e2 = 2 * err;
         int prev_x = current_x; // Store previous x before potential move
